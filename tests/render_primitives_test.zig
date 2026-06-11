@@ -12,6 +12,7 @@ test "rate formatting" {
 test "latency formatting ms" {
     var buf: [16]u8 = undefined;
     try std.testing.expectEqualStrings("42ms", try fmtmod.latencyMs(&buf, 42.0));
+    try std.testing.expectEqualStrings("-", try fmtmod.latencyMs(&buf, std.math.nan(f64)));
 }
 
 test "health thresholds" {

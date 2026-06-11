@@ -17,5 +17,6 @@ pub fn percent(buf: []u8, v: f64) ![]u8 {
 }
 
 pub fn latencyMs(buf: []u8, ms: f64) ![]u8 {
+    if (std.math.isNan(ms)) return std.fmt.bufPrint(buf, "-", .{});
     return std.fmt.bufPrint(buf, "{d:.0}ms", .{ms});
 }
