@@ -32,6 +32,16 @@ pub fn build(b: *std.Build) void {
     const discovery_mod = b.createModule(.{ .root_source_file = b.path("src/discovery.zig"), .target = target, .optimize = optimize });
     discovery_mod.addImport("klient", klient_mod);
 
+    // ---- public library module (for downstream consumers like c3s) ----
+    const kt_mod = b.addModule("kubectl_traffic", .{ .root_source_file = b.path("src/lib.zig"), .target = target, .optimize = optimize });
+    kt_mod.addImport("promql", promql_mod);
+    kt_mod.addImport("prom_client", prom_client_mod);
+    kt_mod.addImport("model", model_mod);
+    kt_mod.addImport("discovery", discovery_mod);
+    kt_mod.addImport("render_line", line_mod);
+    kt_mod.addImport("render_graph", graph_mod);
+    kt_mod.addImport("render_table", table_mod);
+
     const tui_mod = b.createModule(.{ .root_source_file = b.path("src/render/tui.zig"), .target = target, .optimize = optimize });
     tui_mod.addImport("render_line", line_mod);
 
