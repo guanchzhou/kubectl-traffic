@@ -6,4 +6,5 @@ comptime {
     _ = @import("prom_client_test.zig");
     _ = @import("model_test.zig");
     _ = @import("render_primitives_test.zig");
+    _ = @import("table_test.zig");
 }

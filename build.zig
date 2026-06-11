@@ -7,6 +7,24 @@ pub fn build(b: *std.Build) void {
     const klient = b.dependency("zig_klient", .{ .target = target, .optimize = optimize });
     const klient_mod = klient.module("klient");
 
+    // ---- shared source modules ----
+    const cli_mod = b.createModule(.{ .root_source_file = b.path("src/cli.zig"), .target = target, .optimize = optimize });
+    const promql_mod = b.createModule(.{ .root_source_file = b.path("src/promql.zig"), .target = target, .optimize = optimize });
+    const prom_client_mod = b.createModule(.{ .root_source_file = b.path("src/prom_client.zig"), .target = target, .optimize = optimize });
+    prom_client_mod.addImport("klient", klient_mod);
+    const model_mod = b.createModule(.{ .root_source_file = b.path("src/model.zig"), .target = target, .optimize = optimize });
+    const fmt_mod = b.createModule(.{ .root_source_file = b.path("src/render/format.zig"), .target = target, .optimize = optimize });
+    const spark_mod = b.createModule(.{ .root_source_file = b.path("src/render/sparkline.zig"), .target = target, .optimize = optimize });
+    const bar_mod = b.createModule(.{ .root_source_file = b.path("src/render/bar.zig"), .target = target, .optimize = optimize });
+    const line_mod = b.createModule(.{ .root_source_file = b.path("src/render/line.zig"), .target = target, .optimize = optimize });
+    line_mod.addImport("render_format", fmt_mod);
+    const table_mod = b.createModule(.{ .root_source_file = b.path("src/render/table.zig"), .target = target, .optimize = optimize });
+    table_mod.addImport("model", model_mod);
+    table_mod.addImport("render_line", line_mod);
+    table_mod.addImport("render_format", fmt_mod);
+    table_mod.addImport("render_sparkline", spark_mod);
+    table_mod.addImport("render_bar", bar_mod);
+
     const exe = b.addExecutable(.{
         .name = "kubectl-traffic",
         .root_module = b.createModule(.{
@@ -26,13 +44,15 @@ pub fn build(b: *std.Build) void {
         }),
     });
     tests.root_module.addImport("klient", klient_mod);
-    tests.root_module.addImport("cli", b.createModule(.{ .root_source_file = b.path("src/cli.zig") }));
-    tests.root_module.addImport("promql", b.createModule(.{ .root_source_file = b.path("src/promql.zig") }));
-    tests.root_module.addImport("prom_client", b.createModule(.{ .root_source_file = b.path("src/prom_client.zig") }));
-    tests.root_module.addImport("model", b.createModule(.{ .root_source_file = b.path("src/model.zig") }));
-    tests.root_module.addImport("render_format", b.createModule(.{ .root_source_file = b.path("src/render/format.zig") }));
-    tests.root_module.addImport("render_sparkline", b.createModule(.{ .root_source_file = b.path("src/render/sparkline.zig") }));
-    tests.root_module.addImport("render_bar", b.createModule(.{ .root_source_file = b.path("src/render/bar.zig") }));
+    tests.root_module.addImport("cli", cli_mod);
+    tests.root_module.addImport("promql", promql_mod);
+    tests.root_module.addImport("prom_client", prom_client_mod);
+    tests.root_module.addImport("model", model_mod);
+    tests.root_module.addImport("render_format", fmt_mod);
+    tests.root_module.addImport("render_sparkline", spark_mod);
+    tests.root_module.addImport("render_bar", bar_mod);
+    tests.root_module.addImport("render_line", line_mod);
+    tests.root_module.addImport("render_table", table_mod);
     const run_tests = b.addRunArtifact(tests);
     b.step("test", "Run unit tests").dependOn(&run_tests.step);
 }
