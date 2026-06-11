@@ -86,6 +86,28 @@ pub fn run(
     }
 }
 
+/// One-shot collect + render: gather a single tick of metrics, render graph and
+/// table, print a plain frame to stdout, then return.  Does not touch
+/// termios/alt-screen; safe for piped / non-tty output.  Used by --once.
+pub fn runOnce(
+    allocator: std.mem.Allocator,
+    client: *klient.K8sClient,
+    tgt: discovery.PromTarget,
+    workload: []const u8,
+    ns: []const u8,
+    top: usize,
+    title: []const u8,
+) !void {
+    var m = model.TrafficModel.init(allocator, 32);
+    defer m.deinit();
+    try collectTick(client, allocator, &m, tgt, workload, ns);
+    const g = try render_graph.render(allocator, &m, workload, ns, top);
+    defer render_graph.freeLines(allocator, g);
+    const t = try render_table.render(allocator, &m);
+    defer render_table.freeLines(allocator, t);
+    try tui_mod.printFrame(g, t, title);
+}
+
 fn collectLatency(client: *klient.K8sClient, a: std.mem.Allocator, m: *model.TrafficModel, tgt: discovery.PromTarget, dir: model.Direction, workload: []const u8, ns: []const u8) !void {
     const pd = promDir(dir);
     const name_label = if (dir == .inbound) "source_workload" else "destination_workload";

@@ -9,6 +9,8 @@ pub const Cli = struct {
     interval_ms: u64 = 2_000,
     top: usize = 6,
     prometheus: ?[]const u8 = null, // form "svc.<ns>:<port>"
+    server: ?[]const u8 = null, // e.g. "http://127.0.0.1:8001"; bypasses kubeconfig
+    once: bool = false, // collect once, print a single frame, exit
 
     pub const help =
         \\Usage: kubectl traffic <pod|deploy>/<name> [flags]
@@ -16,6 +18,8 @@ pub const Cli = struct {
         \\      --interval <dur>   refresh interval, e.g. 2s, 500ms (default 2s)
         \\      --top <n>          peers drawn in graph per direction (default 6)
         \\      --prometheus <ref> svc.<ns>:<port> override (default: auto-discover)
+        \\      --server <url>     talk to kubectl proxy at <url> (no token/TLS)
+        \\      --once             collect once, print one frame to stdout, then exit
         \\  -h, --help
     ;
 };
@@ -76,6 +80,12 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !Cli {
             i += 1;
             if (i >= args.len) return error.MissingValue;
             c.prometheus = args[i];
+        } else if (std.mem.eql(u8, a, "--server")) {
+            i += 1;
+            if (i >= args.len) return error.MissingValue;
+            c.server = args[i];
+        } else if (std.mem.eql(u8, a, "--once")) {
+            c.once = true;
         } else {
             return error.UnknownFlag;
         }

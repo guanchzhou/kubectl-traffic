@@ -42,7 +42,10 @@ pub fn main(init: std.process.Init) !void {
         std.process.exit(1);
     };
 
-    var boot = try bootstrap.fromKubeconfig(allocator, io, null);
+    var boot = if (c.server) |url|
+        try bootstrap.fromServer(allocator, io, url, c.namespace orelse "default")
+    else
+        try bootstrap.fromKubeconfig(allocator, io, null);
     defer boot.deinit();
 
     const ns = c.namespace orelse boot.namespace;
@@ -57,5 +60,9 @@ pub fn main(init: std.process.Init) !void {
     var title_buf: [160]u8 = undefined;
     const title = try std.fmt.bufPrint(&title_buf, "{s}/{s} . ns:{s}", .{ @tagName(c.kind), c.name, ns });
 
-    try app.run(allocator, &boot.client, tgt, workload, ns, c.interval_ms, c.top, title);
+    if (c.once) {
+        try app.runOnce(allocator, &boot.client, tgt, workload, ns, c.top, title);
+    } else {
+        try app.run(allocator, &boot.client, tgt, workload, ns, c.interval_ms, c.top, title);
+    }
 }

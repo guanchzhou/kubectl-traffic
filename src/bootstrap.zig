@@ -27,17 +27,18 @@ pub fn eksClusterNameFromArgs(args: []const []const u8) ?[]const u8 {
 /// Call `deinit()` when done.  Do NOT call `client.deinit()` separately.
 pub const Bootstrapped = struct {
     client: klient.K8sClient,
-    /// Borrows from `kubeconfig`; freed when `deinit` is called.
+    /// Borrows from `kubeconfig` when built via `fromKubeconfig`; owned slice
+    /// (duped from the server URL) when built via `fromServer`.
     namespace: []const u8,
-    /// Owns the parsed kubeconfig memory; freed last in `deinit`.
-    kubeconfig: Kubeconfig,
+    /// Owns the parsed kubeconfig memory; null when built via `fromServer`.
+    kubeconfig: ?Kubeconfig = null,
     allocator: std.mem.Allocator,
 
     pub fn deinit(self: *Bootstrapped) void {
-        // Client first: it holds a TLS bundle that was built from kubeconfig CA
-        // data.  Free it before the kubeconfig memory it borrowed from.
+        // Client first: it may hold a TLS bundle built from kubeconfig CA data.
+        // Free it before the kubeconfig memory it borrowed from.
         self.client.deinit();
-        self.kubeconfig.deinit(self.allocator);
+        if (self.kubeconfig) |*kc| kc.deinit(self.allocator);
     }
 };
 
@@ -148,4 +149,26 @@ pub fn fromKubeconfig(
         .kubeconfig = kc,
         .allocator = allocator,
     };
+}
+
+/// Build a K8sClient pointed directly at a `kubectl proxy` URL.
+///
+/// No kubeconfig is parsed, no token is used, no TLS is configured.
+/// `server_url` is typically "http://127.0.0.1:8001".
+/// `namespace` is used as-is (caller supplies a default if needed).
+///
+/// Callers own the returned `Bootstrapped` and must call `boot.deinit()`.
+pub fn fromServer(
+    allocator: std.mem.Allocator,
+    io: std.Io,
+    server_url: []const u8,
+    namespace: []const u8,
+) !Bootstrapped {
+    const client = try klient.K8sClient.init(allocator, io, .{
+        .server = server_url,
+        .token = null,
+        .namespace = namespace,
+        .tls_config = null,
+    });
+    return .{ .client = client, .namespace = namespace, .kubeconfig = null, .allocator = allocator };
 }

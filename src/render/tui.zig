@@ -25,6 +25,57 @@ pub fn restoreOnPanic() void {
     g_active = false;
 }
 
+fn colorCode(c: line.Color) []const u8 {
+    return switch (c) {
+        .default => "39",
+        .dim => "2",
+        .green => "32",
+        .yellow => "33",
+        .red => "31",
+        .cyan => "36",
+    };
+}
+
+fn writeAllRaw(fd: std.posix.fd_t, bytes: []const u8) !void {
+    var written: usize = 0;
+    while (written < bytes.len) {
+        const n = std.c.write(fd, bytes.ptr + written, bytes.len - written);
+        if (n < 0) return error.WriteFailed;
+        written += @intCast(n);
+    }
+}
+
+/// Print a single frame to stdout in plain mode (no alt-screen, no raw mode).
+/// Safe for non-tty/piped output. Used by --once.
+pub fn printFrame(graph_lines: []const line.StyledLine, table_lines: []const line.StyledLine, title: []const u8) !void {
+    const fd = std.posix.STDOUT_FILENO;
+    try writeAllRaw(fd, title);
+    try writeAllRaw(fd, "\n\n");
+    for (graph_lines) |ln| {
+        for (ln.spans) |s| {
+            try writeAllRaw(fd, "\x1b[");
+            try writeAllRaw(fd, colorCode(s.color));
+            try writeAllRaw(fd, "m");
+            try writeAllRaw(fd, s.text);
+            try writeAllRaw(fd, "\x1b[0m");
+            try writeAllRaw(fd, " ");
+        }
+        try writeAllRaw(fd, "\n");
+    }
+    try writeAllRaw(fd, "\n");
+    for (table_lines) |ln| {
+        for (ln.spans) |s| {
+            try writeAllRaw(fd, "\x1b[");
+            try writeAllRaw(fd, colorCode(s.color));
+            try writeAllRaw(fd, "m");
+            try writeAllRaw(fd, s.text);
+            try writeAllRaw(fd, "\x1b[0m");
+            try writeAllRaw(fd, " ");
+        }
+        try writeAllRaw(fd, "\n");
+    }
+}
+
 pub const Tui = struct {
     out_fd: std.posix.fd_t,
     in_fd: std.posix.fd_t,
@@ -94,17 +145,6 @@ pub const Tui = struct {
             if (c == 'q' or c == 0x03) return .quit;
         }
         return .none;
-    }
-
-    fn colorCode(c: line.Color) []const u8 {
-        return switch (c) {
-            .default => "39",
-            .dim => "2",
-            .green => "32",
-            .yellow => "33",
-            .red => "31",
-            .cyan => "36",
-        };
     }
 
     fn paintLines(self: *Tui, lines_slice: []const line.StyledLine) !void {

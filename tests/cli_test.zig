@@ -88,3 +88,36 @@ test "HelpRequested: --help anywhere in args" {
     const args = [_][]const u8{ "pod/x", "--help" };
     try std.testing.expectError(error.HelpRequested, cli.parse(std.testing.allocator, &args));
 }
+
+// --- --server and --once ---
+
+test "--server and --once: both set" {
+    const args = [_][]const u8{ "deploy/web", "--server", "http://127.0.0.1:8001", "--once" };
+    const c = try cli.parse(std.testing.allocator, &args);
+    try std.testing.expectEqualStrings("http://127.0.0.1:8001", c.server.?);
+    try std.testing.expect(c.once);
+}
+
+test "--once defaults to false" {
+    const args = [_][]const u8{"deploy/web"};
+    const c = try cli.parse(std.testing.allocator, &args);
+    try std.testing.expect(!c.once);
+}
+
+test "--server defaults to null" {
+    const args = [_][]const u8{"deploy/web"};
+    const c = try cli.parse(std.testing.allocator, &args);
+    try std.testing.expect(c.server == null);
+}
+
+test "--server MissingValue" {
+    const args = [_][]const u8{ "deploy/web", "--server" };
+    try std.testing.expectError(error.MissingValue, cli.parse(std.testing.allocator, &args));
+}
+
+test "--once alone (no --server) is valid" {
+    const args = [_][]const u8{ "deploy/web", "--once" };
+    const c = try cli.parse(std.testing.allocator, &args);
+    try std.testing.expect(c.once);
+    try std.testing.expect(c.server == null);
+}
