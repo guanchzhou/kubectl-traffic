@@ -32,12 +32,18 @@ pub fn build(b: *std.Build) void {
     const discovery_mod = b.createModule(.{ .root_source_file = b.path("src/discovery.zig"), .target = target, .optimize = optimize });
     discovery_mod.addImport("klient", klient_mod);
 
+    const tui_mod = b.createModule(.{ .root_source_file = b.path("src/render/tui.zig"), .target = target, .optimize = optimize });
+    tui_mod.addImport("render_line", line_mod);
+
     const app_mod = b.createModule(.{ .root_source_file = b.path("src/app.zig"), .target = target, .optimize = optimize });
     app_mod.addImport("klient", klient_mod);
     app_mod.addImport("model", model_mod);
     app_mod.addImport("promql", promql_mod);
     app_mod.addImport("prom_client", prom_client_mod);
     app_mod.addImport("discovery", discovery_mod);
+    app_mod.addImport("render_graph", graph_mod);
+    app_mod.addImport("render_table", table_mod);
+    app_mod.addImport("render_tui", tui_mod);
 
     const bootstrap_mod = b.createModule(.{ .root_source_file = b.path("src/bootstrap.zig"), .target = target, .optimize = optimize });
     bootstrap_mod.addImport("klient", klient_mod);
@@ -55,6 +61,11 @@ pub fn build(b: *std.Build) void {
         }),
     });
     exe.root_module.addImport("klient", klient_mod);
+    exe.root_module.addImport("cli", cli_mod);
+    exe.root_module.addImport("bootstrap", bootstrap_mod);
+    exe.root_module.addImport("discovery", discovery_mod);
+    exe.root_module.addImport("target", target_mod);
+    exe.root_module.addImport("app", app_mod);
     b.installArtifact(exe);
 
     const tests = b.addTest(.{

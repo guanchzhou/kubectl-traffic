@@ -4,6 +4,9 @@ const model = @import("model");
 const promql = @import("promql");
 const prom = @import("prom_client");
 const discovery = @import("discovery");
+const render_graph = @import("render_graph");
+const render_table = @import("render_table");
+const tui_mod = @import("render_tui");
 
 /// Function pointer type for model setters that take (model, dir, name, ns, value).
 /// anyerror!void allows concrete error sets to coerce up.
@@ -50,6 +53,37 @@ pub fn collectTick(client: *klient.K8sClient, a: std.mem.Allocator, m: *model.Tr
         try collectLatency(client, a, m, tgt, dir, workload, ns);
     }
     m.commitTick();
+}
+
+/// Live poll loop: collect → render → paint → wait for keypress or interval.
+/// Exits cleanly on 'q' or Ctrl-C.
+pub fn run(
+    allocator: std.mem.Allocator,
+    client: *klient.K8sClient,
+    tgt: discovery.PromTarget,
+    workload: []const u8,
+    ns: []const u8,
+    interval_ms: u64,
+    top: usize,
+    title: []const u8,
+) !void {
+    var m = model.TrafficModel.init(allocator, 32);
+    defer m.deinit();
+
+    var tui = try tui_mod.Tui.init();
+    defer tui.deinit();
+
+    while (true) {
+        collectTick(client, allocator, &m, tgt, workload, ns) catch |err| {
+            std.log.warn("collect failed: {s}", .{@errorName(err)});
+        };
+        const g = try render_graph.render(allocator, &m, workload, ns, top);
+        defer render_graph.freeLines(allocator, g);
+        const t = try render_table.render(allocator, &m);
+        defer render_table.freeLines(allocator, t);
+        try tui.paint(g, t, title);
+        if (try tui.poll(interval_ms) == .quit) break;
+    }
 }
 
 fn collectLatency(client: *klient.K8sClient, a: std.mem.Allocator, m: *model.TrafficModel, tgt: discovery.PromTarget, dir: model.Direction, workload: []const u8, ns: []const u8) !void {
