@@ -27,6 +27,7 @@ pub fn build(b: *std.Build) void {
     });
     tests.root_module.addImport("klient", klient_mod);
     tests.root_module.addImport("cli", b.createModule(.{ .root_source_file = b.path("src/cli.zig") }));
+    tests.root_module.addImport("promql", b.createModule(.{ .root_source_file = b.path("src/promql.zig") }));
     const run_tests = b.addRunArtifact(tests);
     b.step("test", "Run unit tests").dependOn(&run_tests.step);
 }
