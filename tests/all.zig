@@ -9,4 +9,6 @@ comptime {
     _ = @import("table_test.zig");
     _ = @import("graph_test.zig");
     _ = @import("target_test.zig");
+    _ = @import("proxy_path_test.zig");
+    _ = @import("discovery_test.zig");
 }
