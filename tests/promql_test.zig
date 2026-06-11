@@ -4,7 +4,7 @@ const promql = @import("promql");
 test "inbound rate query shape + escaping" {
     const q = try promql.inboundRate(std.testing.allocator, "foo\"x", "ef-test");
     defer std.testing.allocator.free(q);
-    try std.testing.expect(std.mem.indexOf(u8, q, "reporter=\"destination\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, q, "reporter=~\"destination|waypoint\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, q, "destination_workload=\"foo\\\"x\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, q, "destination_workload_namespace=\"ef-test\"") != null);
     try std.testing.expect(std.mem.indexOf(u8, q, "sum by (source_workload, source_workload_namespace)") != null);
@@ -25,7 +25,15 @@ test "errorRate restricts to 5xx" {
     const q = try promql.errorRate(std.testing.allocator, .inbound, "foo", "ef-test");
     defer std.testing.allocator.free(q);
     try std.testing.expect(std.mem.indexOf(u8, q, "response_code=~\"5..\"") != null);
-    try std.testing.expect(std.mem.indexOf(u8, q, "reporter=\"destination\"") != null);
+    try std.testing.expect(std.mem.indexOf(u8, q, "reporter=~\"destination|waypoint\"") != null);
+}
+
+test "inbound matches both sidecar and ambient reporters" {
+    const q = try promql.rate(std.testing.allocator, .inbound, "foo", "ef-test");
+    defer std.testing.allocator.free(q);
+    try std.testing.expect(std.mem.indexOf(u8, q, "reporter=~\"destination|waypoint\"") != null);
+    // must NOT use an exact reporter="destination" match
+    try std.testing.expect(std.mem.indexOf(u8, q, "reporter=\"destination\"") == null);
 }
 
 test "outbound rate groups by destination workload" {

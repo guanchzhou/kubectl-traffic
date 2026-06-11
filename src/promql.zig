@@ -28,10 +28,10 @@ fn selfRole(dir: Direction) []const u8 {
         .outbound => "source",
     };
 }
-fn reporter(dir: Direction) []const u8 {
+fn reporterClause(dir: Direction) []const u8 {
     return switch (dir) {
-        .inbound => "destination",
-        .outbound => "source",
+        .inbound => "reporter=~\"destination|waypoint\"",
+        .outbound => "reporter=\"source\"",
     };
 }
 fn peerLabel(dir: Direction) []const u8 {
@@ -50,8 +50,8 @@ fn selector(allocator: std.mem.Allocator, dir: Direction, workload: []const u8, 
     const role = selfRole(dir);
     return std.fmt.allocPrint(
         allocator,
-        "reporter=\"{s}\",{s}_workload=\"{s}\",{s}_workload_namespace=\"{s}\"",
-        .{ reporter(dir), role, ew, role, en },
+        "{s},{s}_workload=\"{s}\",{s}_workload_namespace=\"{s}\"",
+        .{ reporterClause(dir), role, ew, role, en },
     );
 }
 
