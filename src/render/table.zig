@@ -43,7 +43,13 @@ fn peerRow(a: std.mem.Allocator, p: *model.Peer, max_rate: f64) !StyledLine {
 
 pub fn render(a: std.mem.Allocator, m: *model.TrafficModel) ![]StyledLine {
     var lines = std.ArrayList(StyledLine).empty;
-    errdefer lines.deinit(a);
+    errdefer {
+        for (lines.items) |ln| {
+            for (ln.spans) |s| a.free(s.text);
+            a.free(ln.spans);
+        }
+        lines.deinit(a);
+    }
 
     const dirs = [_]model.Direction{ .inbound, .outbound };
     const titles = [_][]const u8{ "INBOUND", "OUTBOUND" };

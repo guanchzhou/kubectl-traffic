@@ -66,6 +66,7 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addImport("discovery", discovery_mod);
     exe.root_module.addImport("target", target_mod);
     exe.root_module.addImport("app", app_mod);
+    exe.root_module.addImport("render_tui", tui_mod);
     b.installArtifact(exe);
 
     const tests = b.addTest(.{

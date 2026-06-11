@@ -9,6 +9,22 @@ const line = @import("render_line");
 
 pub const Key = enum { quit, none };
 
+// File-scope globals for panic/signal restore.  Written only in init(), cleared
+// in deinit() so double-restore is a no-op.
+var g_active: bool = false;
+var g_orig_termios: ?std.posix.termios = null;
+var g_in_fd: std.posix.fd_t = undefined;
+
+/// Best-effort terminal restore called from the custom panic handler.
+/// Safe to call when no TUI is active (g_active == false → returns immediately).
+pub fn restoreOnPanic() void {
+    if (!g_active) return;
+    // Show cursor + leave alt screen.
+    _ = std.c.write(std.posix.STDOUT_FILENO, "\x1b[?25h\x1b[?1049l", 14);
+    if (g_orig_termios) |o| std.posix.tcsetattr(g_in_fd, .FLUSH, o) catch {};
+    g_active = false;
+}
+
 pub const Tui = struct {
     out_fd: std.posix.fd_t,
     in_fd: std.posix.fd_t,
@@ -26,16 +42,26 @@ pub const Tui = struct {
             var raw = orig;
             raw.lflag.ICANON = false;
             raw.lflag.ECHO = false;
+            // Disable signal generation: Ctrl-C arrives as byte 0x03 instead of
+            // SIGINT, so the quit path in poll() handles it and deinit() always runs.
+            raw.lflag.ISIG = false;
             // VMIN=0, VTIME=0 → non-blocking single-byte reads
             raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
             raw.cc[@intFromEnum(std.posix.V.TIME)] = 0;
             try std.posix.tcsetattr(t.in_fd, .FLUSH, raw);
+            // Arm the file-scope globals so the panic handler can restore state.
+            g_orig_termios = orig;
+            g_in_fd = t.in_fd;
+            g_active = true;
         }
         try t.writeAll("\x1b[?1049h\x1b[?25l"); // alt screen + hide cursor
         return t;
     }
 
     pub fn deinit(self: *Tui) void {
+        // Clear the panic-restore flag first so that, if writeAll somehow panics,
+        // the panic handler still has a consistent view.
+        g_active = false;
         self.writeAll("\x1b[?25h\x1b[?1049l") catch {}; // show cursor + leave alt screen
         if (self.orig_termios) |orig| {
             std.posix.tcsetattr(self.in_fd, .FLUSH, orig) catch {};
@@ -59,7 +85,7 @@ pub const Tui = struct {
             .events = std.posix.POLL.IN,
             .revents = 0,
         }};
-        const n = std.posix.poll(&fds, @intCast(timeout_ms)) catch 0;
+        const n = std.posix.poll(&fds, @intCast(@min(timeout_ms, @as(u64, std.math.maxInt(i32))))) catch 0;
         if (n == 0) return .none;
         var buf: [8]u8 = undefined;
         const r = std.posix.read(self.in_fd, &buf) catch return .none;

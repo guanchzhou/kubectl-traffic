@@ -106,7 +106,9 @@ fn collectLatency(client: *klient.K8sClient, a: std.mem.Allocator, m: *model.Tra
         const pns = s.labels.get(ns_label) orelse "";
         var p99: f64 = 0;
         for (v99.samples) |s2| {
-            if (std.mem.eql(u8, s2.labels.get(name_label) orelse "", name)) p99 = s2.value;
+            const n2 = s2.labels.get(name_label) orelse "";
+            const ns2 = s2.labels.get(ns_label) orelse "";
+            if (std.mem.eql(u8, n2, name) and std.mem.eql(u8, ns2, pns)) p99 = s2.value;
         }
         try m.setLatency(dir, name, pns, s.value, p99);
     }

@@ -4,6 +4,16 @@ const bootstrap = @import("bootstrap");
 const discovery = @import("discovery");
 const target = @import("target");
 const app = @import("app");
+const tui = @import("render_tui");
+
+/// Custom panic handler: restore the terminal before printing the panic message
+/// and stack trace, so the output is readable and the shell is not left broken.
+pub const panic = std.debug.FullPanic(panicFn);
+
+fn panicFn(msg: []const u8, first_trace_addr: ?usize) noreturn {
+    tui.restoreOnPanic();
+    std.debug.defaultPanic(msg, first_trace_addr);
+}
 
 pub fn main(init: std.process.Init) !void {
     const allocator = init.gpa;
