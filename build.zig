@@ -29,6 +29,10 @@ pub fn build(b: *std.Build) void {
     graph_mod.addImport("render_line", line_mod);
     graph_mod.addImport("render_format", fmt_mod);
 
+    const target_mod = b.createModule(.{ .root_source_file = b.path("src/target.zig"), .target = target, .optimize = optimize });
+    target_mod.addImport("cli", cli_mod);
+    target_mod.addImport("klient", klient_mod);
+
     const exe = b.addExecutable(.{
         .name = "kubectl-traffic",
         .root_module = b.createModule(.{
@@ -48,6 +52,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     tests.root_module.addImport("klient", klient_mod);
+    tests.root_module.addImport("target", target_mod);
     tests.root_module.addImport("cli", cli_mod);
     tests.root_module.addImport("promql", promql_mod);
     tests.root_module.addImport("prom_client", prom_client_mod);

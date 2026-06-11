@@ -8,4 +8,5 @@ comptime {
     _ = @import("render_primitives_test.zig");
     _ = @import("table_test.zig");
     _ = @import("graph_test.zig");
+    _ = @import("target_test.zig");
 }
