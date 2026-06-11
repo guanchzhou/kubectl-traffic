@@ -24,6 +24,10 @@ pub fn build(b: *std.Build) void {
     table_mod.addImport("render_format", fmt_mod);
     table_mod.addImport("render_sparkline", spark_mod);
     table_mod.addImport("render_bar", bar_mod);
+    const graph_mod = b.createModule(.{ .root_source_file = b.path("src/render/graph.zig"), .target = target, .optimize = optimize });
+    graph_mod.addImport("model", model_mod);
+    graph_mod.addImport("render_line", line_mod);
+    graph_mod.addImport("render_format", fmt_mod);
 
     const exe = b.addExecutable(.{
         .name = "kubectl-traffic",
@@ -53,6 +57,7 @@ pub fn build(b: *std.Build) void {
     tests.root_module.addImport("render_bar", bar_mod);
     tests.root_module.addImport("render_line", line_mod);
     tests.root_module.addImport("render_table", table_mod);
+    tests.root_module.addImport("render_graph", graph_mod);
     const run_tests = b.addRunArtifact(tests);
     b.step("test", "Run unit tests").dependOn(&run_tests.step);
 }

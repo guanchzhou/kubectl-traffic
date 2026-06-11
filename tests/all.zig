@@ -7,4 +7,5 @@ comptime {
     _ = @import("model_test.zig");
     _ = @import("render_primitives_test.zig");
     _ = @import("table_test.zig");
+    _ = @import("graph_test.zig");
 }
