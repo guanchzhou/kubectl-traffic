@@ -4,6 +4,7 @@ const discovery = @import("discovery");
 test "default prometheus target" {
     const t = discovery.default();
     try std.testing.expectEqualStrings("monitoring", t.namespace);
+    try std.testing.expectEqualStrings("prometheus-operated", t.service);
     try std.testing.expectEqual(@as(u16, 9090), t.port);
 }
 

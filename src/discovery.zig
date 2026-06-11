@@ -3,9 +3,12 @@ const klient = @import("klient");
 
 pub const PromTarget = struct { namespace: []const u8, service: []const u8, port: u16 };
 
-/// Default well-known Prometheus on AlphaSense clusters.
+/// Default Prometheus service. `prometheus-operated` is the prometheus-operator
+/// governing Service, created in the operator's namespace whenever at least one
+/// Prometheus replica is Ready — so it's present across clusters with a healthy
+/// kube-prometheus-stack. Override per-cluster with --prometheus when it differs.
 pub fn default() PromTarget {
-    return .{ .namespace = "monitoring", .service = "kube-prometheus-stack-prometheus", .port = 9090 };
+    return .{ .namespace = "monitoring", .service = "prometheus-operated", .port = 9090 };
 }
 
 /// Parse "svc.ns:port" override form.
