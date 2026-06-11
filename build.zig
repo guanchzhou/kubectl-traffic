@@ -20,12 +20,13 @@ pub fn build(b: *std.Build) void {
 
     const tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/smoke_test.zig"),
+            .root_source_file = b.path("tests/all.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
     tests.root_module.addImport("klient", klient_mod);
+    tests.root_module.addImport("cli", b.createModule(.{ .root_source_file = b.path("src/cli.zig") }));
     const run_tests = b.addRunArtifact(tests);
     b.step("test", "Run unit tests").dependOn(&run_tests.step);
 }
