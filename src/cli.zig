@@ -35,13 +35,16 @@ fn parseTarget(arg: []const u8) !struct { kind: Kind, name: []const u8 } {
 }
 
 /// Parse "2s" / "500ms" / "1m" -> milliseconds.
+/// All parse failures and multiplication overflows return error.InvalidDuration.
 pub fn parseDuration(s: []const u8) !u64 {
     if (std.mem.endsWith(u8, s, "ms")) {
-        return std.fmt.parseInt(u64, s[0 .. s.len - 2], 10);
+        return std.fmt.parseInt(u64, s[0 .. s.len - 2], 10) catch return error.InvalidDuration;
     } else if (std.mem.endsWith(u8, s, "s")) {
-        return (try std.fmt.parseInt(u64, s[0 .. s.len - 1], 10)) * 1_000;
+        const n = std.fmt.parseInt(u64, s[0 .. s.len - 1], 10) catch return error.InvalidDuration;
+        return std.math.mul(u64, n, 1_000) catch error.InvalidDuration;
     } else if (std.mem.endsWith(u8, s, "m")) {
-        return (try std.fmt.parseInt(u64, s[0 .. s.len - 1], 10)) * 60_000;
+        const n = std.fmt.parseInt(u64, s[0 .. s.len - 1], 10) catch return error.InvalidDuration;
+        return std.math.mul(u64, n, 60_000) catch error.InvalidDuration;
     }
     return error.InvalidDuration;
 }
@@ -49,6 +52,9 @@ pub fn parseDuration(s: []const u8) !u64 {
 pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !Cli {
     _ = allocator; // values borrow argv; allocator reserved for future owned fields
     if (args.len == 0) return error.InvalidTarget;
+    for (args) |a| {
+        if (std.mem.eql(u8, a, "-h") or std.mem.eql(u8, a, "--help")) return error.HelpRequested;
+    }
     const t = try parseTarget(args[0]);
     var c = Cli{ .kind = t.kind, .name = t.name };
     var i: usize = 1;
@@ -74,5 +80,6 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !Cli {
             return error.UnknownFlag;
         }
     }
+    if (c.top == 0) return error.InvalidTop;
     return c;
 }
