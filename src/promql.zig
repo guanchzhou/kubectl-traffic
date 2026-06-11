@@ -1,15 +1,12 @@
 const std = @import("std");
 
-/// Escape backslash and double-quote in a PromQL label value.
-/// Caller owns the returned slice.
+/// Escape a PromQL label value (backslash and double-quote). Caller owns result.
 pub fn escape(allocator: std.mem.Allocator, v: []const u8) ![]u8 {
-    // Count extra bytes needed (each \ or " needs one extra char for the backslash)
     var extra: usize = 0;
     for (v) |c| {
         if (c == '\\' or c == '"') extra += 1;
     }
     if (extra == 0) return allocator.dupe(u8, v);
-
     var buf = try allocator.alloc(u8, v.len + extra);
     var i: usize = 0;
     for (v) |c| {
@@ -23,64 +20,74 @@ pub fn escape(allocator: std.mem.Allocator, v: []const u8) ![]u8 {
     return buf;
 }
 
-const Role = enum { inbound, outbound };
+pub const Direction = enum { inbound, outbound };
 
-/// Build a PromQL label selector fragment for the workload side.
-/// For inbound: destination_workload + destination_workload_namespace
-/// For outbound: source_workload + source_workload_namespace
-fn workloadSelector(allocator: std.mem.Allocator, role: Role, workload: []const u8, ns: []const u8) ![]u8 {
-    const escaped = try escape(allocator, workload);
-    defer allocator.free(escaped);
-    return switch (role) {
-        .inbound => std.fmt.allocPrint(
-            allocator,
-            "destination_workload=\"{s}\",destination_workload_namespace=\"{s}\"",
-            .{ escaped, ns },
-        ),
-        .outbound => std.fmt.allocPrint(
-            allocator,
-            "source_workload=\"{s}\",source_workload_namespace=\"{s}\"",
-            .{ escaped, ns },
-        ),
+fn selfRole(dir: Direction) []const u8 {
+    return switch (dir) {
+        .inbound => "destination", // we are the destination; peers are the sources
+        .outbound => "source",
     };
 }
-
-/// reporter label: "destination" for inbound, "source" for outbound.
-fn reporterLabel(role: Role) []const u8 {
-    return switch (role) {
+fn reporter(dir: Direction) []const u8 {
+    return switch (dir) {
         .inbound => "destination",
         .outbound => "source",
     };
 }
+fn peerLabel(dir: Direction) []const u8 {
+    return switch (dir) {
+        .inbound => "source_workload, source_workload_namespace",
+        .outbound => "destination_workload, destination_workload_namespace",
+    };
+}
 
-/// Build the inbound request-rate query:
-///   sum by (source_workload, source_workload_namespace)
-///     (rate(istio_requests_total{reporter="destination",...}[1m]))
-/// Caller owns the returned slice.
-pub fn inboundRate(allocator: std.mem.Allocator, workload: []const u8, ns: []const u8) ![]u8 {
-    const wsel = try workloadSelector(allocator, .inbound, workload, ns);
-    defer allocator.free(wsel);
-
+/// Selector for the SELF workload side, with both workload and namespace escaped.
+fn selector(allocator: std.mem.Allocator, dir: Direction, workload: []const u8, ns: []const u8) ![]u8 {
+    const ew = try escape(allocator, workload);
+    defer allocator.free(ew);
+    const en = try escape(allocator, ns);
+    defer allocator.free(en);
+    const role = selfRole(dir);
     return std.fmt.allocPrint(
         allocator,
-        "sum by (source_workload, source_workload_namespace) " ++
-            "(rate(istio_requests_total{{reporter=\"{s}\",{s}}}[1m]))",
-        .{ reporterLabel(.inbound), wsel },
+        "reporter=\"{s}\",{s}_workload=\"{s}\",{s}_workload_namespace=\"{s}\"",
+        .{ reporter(dir), role, ew, role, en },
     );
 }
 
-/// Build the outbound latency histogram_quantile query:
-///   histogram_quantile(<q>, sum by (le, destination_workload, destination_workload_namespace)
-///     (rate(istio_request_duration_milliseconds_bucket{reporter="source",...}[1m])))
-/// Caller owns the returned slice.
-pub fn outboundLatency(allocator: std.mem.Allocator, workload: []const u8, ns: []const u8, quantile: f64) ![]u8 {
-    const wsel = try workloadSelector(allocator, .outbound, workload, ns);
-    defer allocator.free(wsel);
-
+pub fn rate(allocator: std.mem.Allocator, dir: Direction, workload: []const u8, ns: []const u8) ![]u8 {
+    const sel = try selector(allocator, dir, workload, ns);
+    defer allocator.free(sel);
     return std.fmt.allocPrint(
         allocator,
-        "histogram_quantile({d}, sum by (le, destination_workload, destination_workload_namespace) " ++
-            "(rate(istio_request_duration_milliseconds_bucket{{reporter=\"{s}\",{s}}}[1m])))",
-        .{ quantile, reporterLabel(.outbound), wsel },
+        "sum by ({s}) (rate(istio_requests_total{{{s}}}[1m]))",
+        .{ peerLabel(dir), sel },
     );
+}
+
+pub fn errorRate(allocator: std.mem.Allocator, dir: Direction, workload: []const u8, ns: []const u8) ![]u8 {
+    const sel = try selector(allocator, dir, workload, ns);
+    defer allocator.free(sel);
+    return std.fmt.allocPrint(
+        allocator,
+        "sum by ({s}) (rate(istio_requests_total{{{s},response_code=~\"5..\"}}[1m]))",
+        .{ peerLabel(dir), sel },
+    );
+}
+
+pub fn latency(allocator: std.mem.Allocator, dir: Direction, workload: []const u8, ns: []const u8, quantile: f64) ![]u8 {
+    const sel = try selector(allocator, dir, workload, ns);
+    defer allocator.free(sel);
+    return std.fmt.allocPrint(
+        allocator,
+        "histogram_quantile({d}, sum by (le, {s}) (rate(istio_request_duration_milliseconds_bucket{{{s}}}[1m])))",
+        .{ quantile, peerLabel(dir), sel },
+    );
+}
+
+pub fn inboundRate(a: std.mem.Allocator, w: []const u8, ns: []const u8) ![]u8 {
+    return rate(a, .inbound, w, ns);
+}
+pub fn outboundLatency(a: std.mem.Allocator, w: []const u8, ns: []const u8, q: f64) ![]u8 {
+    return latency(a, .outbound, w, ns, q);
 }
