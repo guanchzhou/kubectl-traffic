@@ -12,4 +12,5 @@ comptime {
     _ = @import("proxy_path_test.zig");
     _ = @import("discovery_test.zig");
     _ = @import("bootstrap_test.zig");
+    _ = @import("app_test.zig");
 }

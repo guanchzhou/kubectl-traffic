@@ -32,6 +32,13 @@ pub fn build(b: *std.Build) void {
     const discovery_mod = b.createModule(.{ .root_source_file = b.path("src/discovery.zig"), .target = target, .optimize = optimize });
     discovery_mod.addImport("klient", klient_mod);
 
+    const app_mod = b.createModule(.{ .root_source_file = b.path("src/app.zig"), .target = target, .optimize = optimize });
+    app_mod.addImport("klient", klient_mod);
+    app_mod.addImport("model", model_mod);
+    app_mod.addImport("promql", promql_mod);
+    app_mod.addImport("prom_client", prom_client_mod);
+    app_mod.addImport("discovery", discovery_mod);
+
     const bootstrap_mod = b.createModule(.{ .root_source_file = b.path("src/bootstrap.zig"), .target = target, .optimize = optimize });
     bootstrap_mod.addImport("klient", klient_mod);
 
@@ -71,6 +78,7 @@ pub fn build(b: *std.Build) void {
     tests.root_module.addImport("render_graph", graph_mod);
     tests.root_module.addImport("discovery", discovery_mod);
     tests.root_module.addImport("bootstrap", bootstrap_mod);
+    tests.root_module.addImport("app", app_mod);
     const run_tests = b.addRunArtifact(tests);
     b.step("test", "Run unit tests").dependOn(&run_tests.step);
 }
