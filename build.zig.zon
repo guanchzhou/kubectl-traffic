@@ -1,0 +1,10 @@
+.{
+    .name = .kubectl_traffic,
+    .version = "0.1.0",
+    .fingerprint = 0x3342f690dde1ed1c,
+    .minimum_zig_version = "0.16.0",
+    .dependencies = .{
+        .zig_klient = .{ .path = "../zig-klient" },
+    },
+    .paths = .{ "build.zig", "build.zig.zon", "src", "tests" },
+}
