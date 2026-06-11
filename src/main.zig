@@ -29,7 +29,7 @@ pub fn main(init: std.process.Init) !void {
             return;
         }
         std.debug.print("error: {s}\n\n{s}\n", .{ @errorName(err), cli.Cli.help });
-        return err;
+        std.process.exit(1);
     };
 
     var boot = try bootstrap.fromKubeconfig(allocator, io, null);
