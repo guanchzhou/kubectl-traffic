@@ -30,6 +30,9 @@ pub fn build(b: *std.Build) void {
     tests.root_module.addImport("promql", b.createModule(.{ .root_source_file = b.path("src/promql.zig") }));
     tests.root_module.addImport("prom_client", b.createModule(.{ .root_source_file = b.path("src/prom_client.zig") }));
     tests.root_module.addImport("model", b.createModule(.{ .root_source_file = b.path("src/model.zig") }));
+    tests.root_module.addImport("render_format", b.createModule(.{ .root_source_file = b.path("src/render/format.zig") }));
+    tests.root_module.addImport("render_sparkline", b.createModule(.{ .root_source_file = b.path("src/render/sparkline.zig") }));
+    tests.root_module.addImport("render_bar", b.createModule(.{ .root_source_file = b.path("src/render/bar.zig") }));
     const run_tests = b.addRunArtifact(tests);
     b.step("test", "Run unit tests").dependOn(&run_tests.step);
 }
