@@ -60,7 +60,7 @@ pub fn rate(allocator: std.mem.Allocator, dir: Direction, workload: []const u8, 
     defer allocator.free(sel);
     return std.fmt.allocPrint(
         allocator,
-        "sum by ({s}) (rate(istio_requests_total{{{s}}}[1m]))",
+        "sum by ({s}) (rate(istio_requests_total{{{s}}}[5m]))",
         .{ peerLabel(dir), sel },
     );
 }
@@ -70,7 +70,7 @@ pub fn errorRate(allocator: std.mem.Allocator, dir: Direction, workload: []const
     defer allocator.free(sel);
     return std.fmt.allocPrint(
         allocator,
-        "sum by ({s}) (rate(istio_requests_total{{{s},response_code=~\"5..\"}}[1m]))",
+        "sum by ({s}) (rate(istio_requests_total{{{s},response_code=~\"5..\"}}[5m]))",
         .{ peerLabel(dir), sel },
     );
 }
@@ -80,7 +80,7 @@ pub fn latency(allocator: std.mem.Allocator, dir: Direction, workload: []const u
     defer allocator.free(sel);
     return std.fmt.allocPrint(
         allocator,
-        "histogram_quantile({d}, sum by (le, {s}) (rate(istio_request_duration_milliseconds_bucket{{{s}}}[1m])))",
+        "histogram_quantile({d}, sum by (le, {s}) (rate(istio_request_duration_milliseconds_bucket{{{s}}}[5m])))",
         .{ quantile, peerLabel(dir), sel },
     );
 }
