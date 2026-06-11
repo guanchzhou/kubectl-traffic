@@ -1,6 +1,10 @@
 const std = @import("std");
 const klient = @import("klient");
 
+// Canonical type alias — Kubeconfig is now re-exported from klient alongside
+// KubeconfigParser so callers don't need to reach into the internal module.
+const Kubeconfig = klient.Kubeconfig;
+
 /// Parse an EKS cluster name from an exec-credential args slice.
 /// Looks for `--cluster-name <value>` and returns the value, or null if absent.
 pub fn eksClusterNameFromArgs(args: []const []const u8) ?[]const u8 {
@@ -11,18 +15,39 @@ pub fn eksClusterNameFromArgs(args: []const []const u8) ?[]const u8 {
     return null;
 }
 
+/// Owns all resources that `fromKubeconfig` produces.
+///
+/// Lifetime contract:
+///   - `namespace` borrows from `kubeconfig` (valid until `deinit`).
+///   - `client` borrows its CA data from `kubeconfig.tls_config.ca_cert_data`
+///     (valid until `deinit`).
+///   - `client.api_server`, `client.token`, and `client.namespace` are duped
+///     by `K8sClient.init`, so they are independent of `kubeconfig`.
+///
+/// Call `deinit()` when done.  Do NOT call `client.deinit()` separately.
 pub const Bootstrapped = struct {
     client: klient.K8sClient,
+    /// Borrows from `kubeconfig`; freed when `deinit` is called.
     namespace: []const u8,
+    /// Owns the parsed kubeconfig memory; freed last in `deinit`.
+    kubeconfig: Kubeconfig,
+    allocator: std.mem.Allocator,
+
+    pub fn deinit(self: *Bootstrapped) void {
+        // Client first: it holds a TLS bundle that was built from kubeconfig CA
+        // data.  Free it before the kubeconfig memory it borrowed from.
+        self.client.deinit();
+        self.kubeconfig.deinit(self.allocator);
+    }
 };
 
 /// Build an authenticated K8sClient from the current kubeconfig context.
 ///
 /// `context_override` selects a named context; null uses current-context.
 ///
-/// Callers own the returned `Bootstrapped` and must call `client.deinit()` when
-/// done.  The `namespace` slice is owned by the K8sClient allocator — do not
-/// free it separately.
+/// Callers own the returned `Bootstrapped` and must call `boot.deinit()` when
+/// done.  Do NOT call `boot.client.deinit()` separately — `deinit()` handles
+/// the full teardown in the correct order (client before kubeconfig).
 pub fn fromKubeconfig(
     allocator: std.mem.Allocator,
     io: std.Io,
@@ -31,7 +56,9 @@ pub fn fromKubeconfig(
     // ---- 1. Parse kubeconfig ----
     var parser = klient.KubeconfigParser.init(allocator, io);
     var kc = try parser.load();
-    defer kc.deinit(allocator);
+    // NOTE: no `defer kc.deinit` here — ownership transfers to Bootstrapped.
+    // On error paths below we deinit explicitly before returning the error.
+    errdefer kc.deinit(allocator);
 
     // ---- 2. Resolve context ----
     const context = (if (context_override) |n|
@@ -81,6 +108,15 @@ pub fn fromKubeconfig(
     // Cluster.certificate_authority_data = base64 PEM from kubeconfig.
     // Cluster.certificate_authority      = path to CA bundle file.
     // TlsConfig.ca_cert_data / .ca_cert_path are the matching fields.
+    //
+    // LIFETIME: tls_cfg.ca_cert_data BORROWS from kc (cluster slice).
+    // K8sClient.init reads ca_cert_data to populate the TLS bundle but does NOT
+    // dupe the PEM bytes itself — it writes them to a temp file and reads them
+    // back into the bundle.  The client therefore does NOT hold a live pointer to
+    // ca_cert_data after init returns, so in practice the dangle is already
+    // inert.  Nevertheless, kc must outlive the client for correctness of any
+    // future code paths that re-inspect tls_config, so we keep the ownership
+    // model intact.
     const tls_cfg: ?klient.TlsConfig = if (cluster.certificate_authority_data) |ca|
         .{ .ca_cert_data = ca }
     else if (cluster.certificate_authority) |ca_path|
@@ -89,6 +125,14 @@ pub fn fromKubeconfig(
         null;
 
     // ---- 6. Build client ----
+    // `ns` borrows from kc.  It outlives the function call because kc is now
+    // stored in Bootstrapped rather than freed on return.
+    //
+    // K8sClient.init dupes `server` (line: `try allocator.dupe(u8, config.server)`)
+    // and `token` (line: `if (config.token) |t| try allocator.dupe(u8, t)`) and
+    // `namespace` (line: `try allocator.dupe(u8, config.namespace orelse "default")`).
+    // Those fields are therefore safe after exec_cred is deinit'd and regardless
+    // of the lifetime of kc.
     const ns = context.namespace orelse "default";
 
     const client = try klient.K8sClient.init(allocator, io, .{
@@ -101,5 +145,7 @@ pub fn fromKubeconfig(
     return Bootstrapped{
         .client = client,
         .namespace = ns,
+        .kubeconfig = kc,
+        .allocator = allocator,
     };
 }
