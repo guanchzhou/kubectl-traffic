@@ -3,8 +3,8 @@ const pc = @import("prom_client");
 
 const sample =
     \\{"status":"success","data":{"resultType":"vector","result":[
-    \\{"metric":{"source_workload":"bar","source_workload_namespace":"ef-test"},"value":[1718000000,"3.5"]},
-    \\{"metric":{"source_workload":"auth-ws","source_workload_namespace":"ef-test"},"value":[1718000000,"1"]}
+    \\{"metric":{"source_workload":"bar","source_workload_namespace":"demo"},"value":[1718000000,"3.5"]},
+    \\{"metric":{"source_workload":"auth-ws","source_workload_namespace":"demo"},"value":[1718000000,"1"]}
     \\]}}
 ;
 

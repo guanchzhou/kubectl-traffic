@@ -17,7 +17,7 @@ test "live: bootstrap + one collectTick against a meshed workload (gated by KT_L
     const workload: []const u8 = std.mem.span(workload_ptr);
 
     const ns_ptr = std.c.getenv("KT_LIVE_NS");
-    const ns: []const u8 = if (ns_ptr) |p| std.mem.span(p) else "ef-test";
+    const ns: []const u8 = if (ns_ptr) |p| std.mem.span(p) else "demo";
 
     const ctx_ptr = std.c.getenv("KT_LIVE_CONTEXT");
     const ctx_override: ?[]const u8 = if (ctx_ptr) |p| std.mem.span(p) else null;

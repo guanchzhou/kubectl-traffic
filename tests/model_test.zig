@@ -4,8 +4,8 @@ const model = @import("model");
 test "upsert peer rate + error -> success percent" {
     var m = model.TrafficModel.init(std.testing.allocator, 8);
     defer m.deinit();
-    try m.setRate(.inbound, "bar", "ef-test", 10.0);
-    try m.setErrorRate(.inbound, "bar", "ef-test", 0.2);
+    try m.setRate(.inbound, "bar", "demo", 10.0);
+    try m.setErrorRate(.inbound, "bar", "demo", 0.2);
     const p = m.peer(.inbound, "bar").?;
     try std.testing.expectApproxEqAbs(@as(f64, 10.0), p.req_per_s, 1e-9);
     try std.testing.expectApproxEqAbs(@as(f64, 98.0), p.successPercent(), 1e-9); // (1 - 0.2/10)*100
@@ -14,13 +14,13 @@ test "upsert peer rate + error -> success percent" {
 test "rolling history keeps last N and powers sparkline source" {
     var m = model.TrafficModel.init(std.testing.allocator, 3);
     defer m.deinit();
-    try m.setRate(.inbound, "bar", "ef-test", 1);
+    try m.setRate(.inbound, "bar", "demo", 1);
     m.commitTick();
-    try m.setRate(.inbound, "bar", "ef-test", 2);
+    try m.setRate(.inbound, "bar", "demo", 2);
     m.commitTick();
-    try m.setRate(.inbound, "bar", "ef-test", 3);
+    try m.setRate(.inbound, "bar", "demo", 3);
     m.commitTick();
-    try m.setRate(.inbound, "bar", "ef-test", 4);
+    try m.setRate(.inbound, "bar", "demo", 4);
     m.commitTick();
     const p = m.peer(.inbound, "bar").?;
     const h = p.history();

@@ -5,8 +5,8 @@ const table = @import("render_table");
 test "table renders a header + a peer row per direction" {
     var m = model.TrafficModel.init(std.testing.allocator, 8);
     defer m.deinit();
-    try m.setRate(.inbound, "bar", "ef-test", 3.1);
-    try m.setLatency(.inbound, "bar", "ef-test", 4, 11);
+    try m.setRate(.inbound, "bar", "demo", 3.1);
+    try m.setLatency(.inbound, "bar", "demo", 4, 11);
     m.commitTick();
 
     const lines = try table.render(std.testing.allocator, &m);

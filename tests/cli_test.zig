@@ -2,11 +2,11 @@ const std = @import("std");
 const cli = @import("cli");
 
 test "parse deploy target with flags" {
-    const args = [_][]const u8{ "deploy/foo", "-n", "ef-test", "--interval", "5s", "--top", "8" };
+    const args = [_][]const u8{ "deploy/foo", "-n", "demo", "--interval", "5s", "--top", "8" };
     const c = try cli.parse(std.testing.allocator, &args);
     try std.testing.expectEqual(cli.Kind.deployment, c.kind);
     try std.testing.expectEqualStrings("foo", c.name);
-    try std.testing.expectEqualStrings("ef-test", c.namespace.?);
+    try std.testing.expectEqualStrings("demo", c.namespace.?);
     try std.testing.expectEqual(@as(u64, 5_000), c.interval_ms);
     try std.testing.expectEqual(@as(usize, 8), c.top);
 }

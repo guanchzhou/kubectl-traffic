@@ -6,7 +6,7 @@ const prom = @import("prom_client");
 test "applyRate folds inbound samples into model keyed by source_workload" {
     const json =
         \\{"status":"success","data":{"resultType":"vector","result":[
-        \\{"metric":{"source_workload":"bar","source_workload_namespace":"ef-test"},"value":[1,"3.5"]}
+        \\{"metric":{"source_workload":"bar","source_workload_namespace":"demo"},"value":[1,"3.5"]}
         \\]}}
     ;
     var v = try prom.parseVector(std.testing.allocator, json);
@@ -20,7 +20,7 @@ test "applyRate folds inbound samples into model keyed by source_workload" {
 test "applyRate folds outbound samples keyed by destination_workload" {
     const json =
         \\{"status":"success","data":{"resultType":"vector","result":[
-        \\{"metric":{"destination_workload":"baz","destination_workload_namespace":"ef-test"},"value":[1,"5"]}
+        \\{"metric":{"destination_workload":"baz","destination_workload_namespace":"demo"},"value":[1,"5"]}
         \\]}}
     ;
     var v = try prom.parseVector(std.testing.allocator, json);

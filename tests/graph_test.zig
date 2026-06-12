@@ -6,9 +6,9 @@ test "graph shows target, top inbound peer with rate, and totals" {
     var m = model.TrafficModel.init(std.testing.allocator, 8);
     defer m.deinit();
     try m.setRate(.inbound, "istio-ingressgw", "istio-system", 12.4);
-    try m.setRate(.outbound, "baz", "ef-test", 5.0);
+    try m.setRate(.outbound, "baz", "demo", 5.0);
 
-    const lines = try graph.render(std.testing.allocator, &m, "foo", "ef-test", 6);
+    const lines = try graph.render(std.testing.allocator, &m, "foo", "demo", 6);
     defer graph.freeLines(std.testing.allocator, lines);
 
     var joined = std.ArrayList(u8).empty;
