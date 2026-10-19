@@ -26,7 +26,7 @@ test "sparkline maps to 8 levels" {
     var buf: [64]u8 = undefined;
     const s = try spark.render(&buf, &vals);
     try std.testing.expect(std.mem.startsWith(u8, s, "\u{2581}")); // lowest -> ▁
-    try std.testing.expect(std.mem.endsWith(u8, s, "\u{2588}"));   // highest -> █
+    try std.testing.expect(std.mem.endsWith(u8, s, "\u{2588}")); // highest -> █
 }
 
 test "bar scales to width by max" {
