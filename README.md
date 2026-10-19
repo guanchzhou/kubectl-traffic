@@ -15,7 +15,7 @@ no sidecar required on the client side.
 
 | Requirement | Notes |
 |---|---|
-| **Zig 0.16.0** | Build toolchain |
+| **Zig 0.17.0** | Build toolchain |
 | **kubeconfig** | A context with API-server access |
 | **Istio** | Target workload must be sidecar-injected |
 | **Prometheus** | kube-prometheus-stack (or compatible) scraping Istio metrics |

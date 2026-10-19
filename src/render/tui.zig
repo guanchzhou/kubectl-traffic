@@ -97,8 +97,8 @@ pub const Tui = struct {
             // SIGINT, so the quit path in poll() handles it and deinit() always runs.
             raw.lflag.ISIG = false;
             // VMIN=0, VTIME=0 → non-blocking single-byte reads
-            raw.cc[@intFromEnum(std.posix.V.MIN)] = 0;
-            raw.cc[@intFromEnum(std.posix.V.TIME)] = 0;
+            raw.cc[@backingInt(std.posix.V.MIN)] = 0;
+            raw.cc[@backingInt(std.posix.V.TIME)] = 0;
             try std.posix.tcsetattr(t.in_fd, .FLUSH, raw);
             // Arm the file-scope globals so the panic handler can restore state.
             g_orig_termios = orig;
