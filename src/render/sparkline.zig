@@ -16,8 +16,12 @@ pub fn render(buf: []u8, vals: []const f64) ![]u8 {
     const span = hi - lo;
     var w: usize = 0;
     for (vals) |v| {
-        const lvl: usize = if (span <= 0) 0 else @intFromFloat(@round((v - lo) / span * 7.0));
+        const lvl: usize = if (span <= 0 or !std.math.isFinite(span) or !std.math.isFinite(v))
+            0
+        else
+            @intFromFloat(@round((v - lo) / span * 7.0));
         const g = levels[std.math.clamp(lvl, @as(usize, 0), @as(usize, 7))];
+        if (w + g.len > buf.len) return error.NoSpaceLeft;
         @memcpy(buf[w .. w + g.len], g);
         w += g.len;
     }

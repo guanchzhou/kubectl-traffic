@@ -32,15 +32,32 @@ pub const Bootstrapped = struct {
     namespace: []const u8,
     /// Owns the parsed kubeconfig memory; null when built via `fromServer`.
     kubeconfig: ?Kubeconfig = null,
+    /// Owns decoded PEM bytes when `certificate_authority_data` was base64-decoded.
+    ca_pem_owned: ?[]u8 = null,
     allocator: std.mem.Allocator,
 
     pub fn deinit(self: *Bootstrapped) void {
         // Client first: it may hold a TLS bundle built from kubeconfig CA data.
         // Free it before the kubeconfig memory it borrowed from.
         self.client.deinit();
+        if (self.ca_pem_owned) |pem| self.allocator.free(pem);
         if (self.kubeconfig) |*kc| kc.deinit(self.allocator);
     }
 };
+
+/// Decode kubeconfig `certificate-authority-data` (base64 PEM) into raw PEM bytes,
+/// or dupe raw PEM if already PEM-armored. Caller owns the returned slice.
+pub fn decodeCaCertData(allocator: std.mem.Allocator, ca_data: []const u8) ![]u8 {
+    const trimmed = std.mem.trim(u8, ca_data, " \t\r\n");
+    if (std.mem.startsWith(u8, trimmed, "-----BEGIN")) {
+        return allocator.dupe(u8, trimmed);
+    }
+    const decoded_len = try std.base64.standard.Decoder.calcSizeForSlice(trimmed);
+    const decoded = try allocator.alloc(u8, decoded_len);
+    errdefer allocator.free(decoded);
+    try std.base64.standard.Decoder.decode(decoded, trimmed);
+    return decoded;
+}
 
 /// Build an authenticated K8sClient from the current kubeconfig context.
 ///
@@ -118,10 +135,28 @@ pub fn fromKubeconfig(
     // inert.  Nevertheless, kc must outlive the client for correctness of any
     // future code paths that re-inspect tls_config, so we keep the ownership
     // model intact.
-    const tls_cfg: ?klient.TlsConfig = if (cluster.certificate_authority_data) |ca|
-        .{ .ca_cert_data = ca }
-    else if (cluster.certificate_authority) |ca_path|
-        .{ .ca_cert_path = ca_path }
+    var ca_pem_owned: ?[]u8 = null;
+    errdefer if (ca_pem_owned) |pem| allocator.free(pem);
+
+    const skip_verify = cluster.insecure_skip_tls_verify orelse false;
+    const tls_cfg: ?klient.TlsConfig = if (cluster.certificate_authority_data) |ca| blk: {
+        const pem = try decodeCaCertData(allocator, ca);
+        ca_pem_owned = pem;
+        break :blk .{
+            .ca_cert_data = pem,
+            .client_cert_path = user.client_certificate,
+            .client_key_path = user.client_key,
+            .insecure_skip_verify = skip_verify,
+        };
+    } else if (cluster.certificate_authority) |ca_path|
+        .{
+            .ca_cert_path = ca_path,
+            .client_cert_path = user.client_certificate,
+            .client_key_path = user.client_key,
+            .insecure_skip_verify = skip_verify,
+        }
+    else if (skip_verify)
+        .{ .insecure_skip_verify = true }
     else
         null;
 
@@ -147,6 +182,7 @@ pub fn fromKubeconfig(
         .client = client,
         .namespace = ns,
         .kubeconfig = kc,
+        .ca_pem_owned = ca_pem_owned,
         .allocator = allocator,
     };
 }

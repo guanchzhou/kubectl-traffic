@@ -20,8 +20,8 @@ fn header(a: std.mem.Allocator, title: []const u8) !StyledLine {
 
 fn peerRow(a: std.mem.Allocator, p: *model.Peer, max_rate: f64) !StyledLine {
     var rbuf: [16]u8 = undefined;
-    var sbuf: [128]u8 = undefined;
-    var bbuf: [64]u8 = undefined;
+    var sbuf: [256]u8 = undefined;
+    var bbuf: [128]u8 = undefined;
     var p99buf: [16]u8 = undefined;
     var pctbuf: [16]u8 = undefined;
 

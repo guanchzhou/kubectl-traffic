@@ -50,10 +50,12 @@ pub fn main(init: std.process.Init) !void {
 
     const ns = c.namespace orelse boot.namespace;
 
-    const workload = switch (c.kind) {
-        .deployment => c.name,
+    const resolved_pod_workload: ?[]const u8 = switch (c.kind) {
+        .deployment => null,
         .pod => try target.resolvePod(&boot.client, allocator, ns, c.name),
     };
+    defer if (resolved_pod_workload) |w| allocator.free(w);
+    const workload = resolved_pod_workload orelse c.name;
 
     const tgt = if (c.prometheus) |ref| try discovery.parseOverride(ref) else discovery.default();
 

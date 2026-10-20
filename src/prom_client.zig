@@ -28,19 +28,31 @@ pub fn parseVector(gpa: std.mem.Allocator, body: []const u8) !Vector {
     const a = arena.allocator();
 
     const parsed = try std.json.parseFromSliceLeaky(std.json.Value, a, body, .{ .allocate = .alloc_always });
+    if (parsed != .object) return error.BadResponse;
+    if (parsed.object.get("status")) |st| {
+        if (st == .string and !std.mem.eql(u8, st.string, "success")) return error.BadResponse;
+    }
     const data = parsed.object.get("data") orelse return error.BadResponse;
+    if (data != .object) return error.BadResponse;
     const result = data.object.get("result") orelse return error.BadResponse;
+    if (result != .array) return error.BadResponse;
 
     var list = std.ArrayList(Sample).empty;
     for (result.array.items) |item| {
-        const metric = item.object.get("metric").?.object;
+        if (item != .object) return error.BadResponse;
+        const metric_val = item.object.get("metric") orelse return error.BadResponse;
+        if (metric_val != .object) return error.BadResponse;
         var labels = std.StringHashMap([]const u8).init(a);
-        var it = metric.iterator();
+        var it = metric_val.object.iterator();
         while (it.next()) |entry| {
-            try labels.put(entry.key_ptr.*, entry.value_ptr.*.string);
+            if (entry.value_ptr.* == .string) {
+                try labels.put(entry.key_ptr.*, entry.value_ptr.*.string);
+            }
         }
-        const value_arr = item.object.get("value").?.array;
-        const vstr = value_arr.items[1].string; // [ ts, "value" ]
+        const value_val = item.object.get("value") orelse return error.BadResponse;
+        if (value_val != .array or value_val.array.items.len < 2) return error.BadResponse;
+        if (value_val.array.items[1] != .string) return error.BadResponse;
+        const vstr = value_val.array.items[1].string; // [ ts, "value" ]
         const value = std.fmt.parseFloat(f64, vstr) catch std.math.nan(f64);
         try list.append(a, .{ .labels = labels, .value = value });
     }

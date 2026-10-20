@@ -70,15 +70,31 @@ pub const TrafficModel = struct {
         return null;
     }
 
+    fn findInNamespace(self: *TrafficModel, dir: Direction, name: []const u8, ns: []const u8) ?*Peer {
+        for (self.peers.items) |p| {
+            if (p.dir == dir and std.mem.eql(u8, p.name, name) and std.mem.eql(u8, p.namespace, ns)) return p;
+        }
+        return null;
+    }
+
     fn getOrCreate(self: *TrafficModel, dir: Direction, name: []const u8, ns: []const u8) !*Peer {
-        if (self.find(dir, name)) |p| return p;
+        if (self.findInNamespace(dir, name, ns)) |p| return p;
         const p = try self.allocator.create(Peer);
+        errdefer self.allocator.destroy(p);
+        const dup_name = try self.allocator.dupe(u8, name);
+        errdefer self.allocator.free(dup_name);
+        const dup_ns = try self.allocator.dupe(u8, ns);
+        errdefer self.allocator.free(dup_ns);
+        const hist = try self.allocator.alloc(f64, self.cap);
+        errdefer self.allocator.free(hist);
+        const hist_lin = try self.allocator.alloc(f64, self.cap);
+        errdefer self.allocator.free(hist_lin);
         p.* = .{
-            .name = try self.allocator.dupe(u8, name),
-            .namespace = try self.allocator.dupe(u8, ns),
+            .name = dup_name,
+            .namespace = dup_ns,
             .dir = dir,
-            .hist = try self.allocator.alloc(f64, self.cap),
-            .hist_lin = try self.allocator.alloc(f64, self.cap),
+            .hist = hist,
+            .hist_lin = hist_lin,
             .cap = self.cap,
         };
         try self.peers.append(self.allocator, p);
@@ -101,6 +117,21 @@ pub const TrafficModel = struct {
 
     pub fn peer(self: *TrafficModel, dir: Direction, name: []const u8) ?*Peer {
         return self.find(dir, name);
+    }
+
+    pub fn peerInNamespace(self: *TrafficModel, dir: Direction, name: []const u8, ns: []const u8) ?*Peer {
+        return self.findInNamespace(dir, name, ns);
+    }
+
+    /// Zero transient per-tick metrics before folding a new scrape so peers that
+    /// disappeared from the latest instant vector decay to 0 instead of freezing.
+    pub fn beginTick(self: *TrafficModel) void {
+        for (self.peers.items) |p| {
+            p.req_per_s = 0;
+            p.err_per_s = 0;
+            p.p50_ms = 0;
+            p.p99_ms = 0;
+        }
     }
 
     /// Push the current req_per_s of every peer into its history ring.

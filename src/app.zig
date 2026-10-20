@@ -33,6 +33,7 @@ fn promDir(dir: model.Direction) promql.Direction {
 
 /// One refresh: rate + errorRate + p50/p99 per direction, folded into the model.
 pub fn collectTick(client: *klient.K8sClient, a: std.mem.Allocator, m: *model.TrafficModel, tgt: discovery.PromTarget, workload: []const u8, ns: []const u8) !void {
+    m.beginTick();
     const dirs = [_]model.Direction{ .inbound, .outbound };
     for (dirs) |dir| {
         const pd = promDir(dir);

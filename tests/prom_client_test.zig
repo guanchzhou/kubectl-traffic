@@ -29,3 +29,11 @@ test "NaN string value parses to nan" {
     defer res.deinit();
     try std.testing.expect(std.math.isNan(res.samples[0].value));
 }
+
+test "error status or malformed payload returns error.BadResponse instead of panicking" {
+    const err_json = "{\"status\":\"error\",\"errorType\":\"bad_data\",\"error\":\"invalid parameter\"}";
+    try std.testing.expectError(error.BadResponse, pc.parseVector(std.testing.allocator, err_json));
+
+    const bad_item = "{\"status\":\"success\",\"data\":{\"resultType\":\"vector\",\"result\":[{\"metric\":123}]}}";
+    try std.testing.expectError(error.BadResponse, pc.parseVector(std.testing.allocator, bad_item));
+}

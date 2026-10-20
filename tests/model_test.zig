@@ -39,3 +39,30 @@ test "totals and topN by rate" {
     defer std.testing.allocator.free(top);
     try std.testing.expectEqualStrings("a", top[0].name);
 }
+
+test "same workload name in different namespaces does not collide" {
+    var m = model.TrafficModel.init(std.testing.allocator, 8);
+    defer m.deinit();
+    try m.setRate(.inbound, "api", "team-a", 12.0);
+    try m.setRate(.inbound, "api", "team-b", 3.5);
+    try std.testing.expectEqual(@as(usize, 2), m.peers.items.len);
+    try std.testing.expectApproxEqAbs(@as(f64, 12.0), m.peerInNamespace(.inbound, "api", "team-a").?.req_per_s, 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 3.5), m.peerInNamespace(.inbound, "api", "team-b").?.req_per_s, 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 15.5), m.totalRate(.inbound), 1e-9);
+}
+
+test "beginTick zeroes stale rates for peers missing from next scrape" {
+    var m = model.TrafficModel.init(std.testing.allocator, 8);
+    defer m.deinit();
+    try m.setRate(.inbound, "bar", "demo", 9.0);
+    try m.setErrorRate(.inbound, "bar", "demo", 1.0);
+    try m.setLatency(.inbound, "bar", "demo", 2.0, 15.0);
+    m.commitTick();
+
+    m.beginTick();
+    const p = m.peer(.inbound, "bar").?;
+    try std.testing.expectApproxEqAbs(@as(f64, 0.0), p.req_per_s, 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.0), p.err_per_s, 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.0), p.p50_ms, 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 0.0), p.p99_ms, 1e-9);
+}
