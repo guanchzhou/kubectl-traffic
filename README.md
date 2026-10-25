@@ -16,7 +16,7 @@ no sidecar required on the client side.
 | Requirement | Notes |
 |---|---|
 | **Zig 0.17.0** | Build toolchain |
-| **kubeconfig** | A context with API-server access |
+| **kubeconfig** | A context authenticating with a bearer token (static or exec plugin such as `aws eks get-token`); see [Authentication](#authentication) |
 | **Istio** | Target workload must be sidecar-injected |
 | **Prometheus** | kube-prometheus-stack (or compatible) scraping Istio metrics |
 
@@ -47,9 +47,12 @@ kubectl traffic <pod|deploy>/<name> [flags]
 
 Flags:
   -n, --namespace <ns>      Target namespace (default: current context namespace)
-      --interval <dur>      Refresh interval, e.g. 2s, 500ms (default: 2s)
+      --interval <dur>      Refresh interval, e.g. 2s, 500ms (default: 2s, minimum: 250ms)
       --top <n>             Peers shown in graph per direction (default: 6)
-      --prometheus <ref>    Prometheus override: svc.<ns>:<port>
+      --prometheus <ref>    Prometheus service: svc.<ns>:<port> (default: prometheus-operated.monitoring:9090)
+      --context <name>      Kubeconfig context (default: current-context)
+      --server <url>        Talk to `kubectl proxy` at <url> instead of using kubeconfig
+      --once                Collect once, print one frame to stdout, then exit
   -h, --help
 ```
 
@@ -80,9 +83,9 @@ Press `q` or `Ctrl-C` to quit.
 2. **PromQL queries** — for each direction (inbound / outbound) the plugin
    issues three instant-vector queries against `istio_requests_total` and
    `istio_request_duration_milliseconds_bucket`:
-   - request rate (req/s)
-   - error rate (non-2xx/3xx responses)
-   - p50 and p99 latency
+   - request rate and 5xx rate (one query, split by response class)
+   - p50 latency
+   - p99 latency
 3. **Kubernetes service proxy** — queries go through
    `GET /api/v1/namespaces/<ns>/services/<svc>:<port>/proxy/api/v1/query`
    so no direct network path to Prometheus is required.
@@ -93,15 +96,35 @@ Press `q` or `Ctrl-C` to quit.
 
 ---
 
-## Prometheus discovery
+## Prometheus location
 
-Default target: `kube-prometheus-stack-prometheus` in the `monitoring`
-namespace on port `9090`.
+There is no auto-discovery. The default target is the `prometheus-operated`
+service in the `monitoring` namespace on port `9090` (created by
+prometheus-operator / kube-prometheus-stack).
 
 Override with `--prometheus svc.<namespace>:<port>`, for example:
 
 ```sh
 kubectl traffic deploy/my-api --prometheus prometheus-operated.prometheus:9090
+```
+
+---
+
+## Authentication
+
+Supported: a bearer token from the kubeconfig user (`token`, or an `exec`
+credential plugin), with the cluster CA from `certificate-authority` or
+`certificate-authority-data`.
+
+Not supported: client certificates (`client-certificate[-data]` /
+`client-key[-data]`) and `insecure-skip-tls-verify`, because Zig's TLS client
+can neither present a client certificate nor skip verification. The tool
+detects these up front and exits with an error. Workaround: run
+`kubectl proxy` and point the plugin at it:
+
+```sh
+kubectl proxy &
+kubectl traffic deploy/my-api --server http://127.0.0.1:8001
 ```
 
 ---

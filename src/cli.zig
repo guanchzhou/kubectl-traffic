@@ -1,4 +1,5 @@
 const std = @import("std");
+const names = @import("names");
 
 pub const Kind = enum { pod, deployment };
 
@@ -11,13 +12,15 @@ pub const Cli = struct {
     prometheus: ?[]const u8 = null, // form "svc.<ns>:<port>"
     server: ?[]const u8 = null, // e.g. "http://127.0.0.1:8001"; bypasses kubeconfig
     once: bool = false, // collect once, print a single frame, exit
+    context: ?[]const u8 = null, // kubeconfig context; null uses current-context
 
     pub const help =
         \\Usage: kubectl traffic <pod|deploy>/<name> [flags]
         \\  -n, --namespace <ns>   target namespace (default: context ns)
-        \\      --interval <dur>   refresh interval, e.g. 2s, 500ms (default 2s)
+        \\      --interval <dur>   refresh interval, e.g. 2s, 500ms (default 2s, min 250ms)
         \\      --top <n>          peers drawn in graph per direction (default 6)
-        \\      --prometheus <ref> svc.<ns>:<port> override (default: auto-discover)
+        \\      --prometheus <ref> svc.<ns>:<port> (default: prometheus-operated.monitoring:9090)
+        \\      --context <name>   kubeconfig context (default: current-context)
         \\      --server <url>     talk to kubectl proxy at <url> (no token/TLS)
         \\      --once             collect once, print one frame to stdout, then exit
         \\  -h, --help
@@ -29,6 +32,7 @@ fn parseTarget(arg: []const u8) !struct { kind: Kind, name: []const u8 } {
     const k = arg[0..slash];
     const n = arg[slash + 1 ..];
     if (n.len == 0) return error.InvalidTarget;
+    try names.validate(n);
     const kind: Kind = if (std.mem.eql(u8, k, "pod"))
         .pod
     else if (std.mem.eql(u8, k, "deploy") or std.mem.eql(u8, k, "deployment"))
@@ -37,6 +41,8 @@ fn parseTarget(arg: []const u8) !struct { kind: Kind, name: []const u8 } {
         return error.InvalidTarget;
     return .{ .kind = kind, .name = n };
 }
+
+pub const min_interval_ms: u64 = 250;
 
 /// Parse "2s" / "500ms" / "1m" -> milliseconds.
 /// All parse failures and multiplication overflows return error.InvalidDuration.
@@ -67,11 +73,13 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !Cli {
         if (std.mem.eql(u8, a, "-n") or std.mem.eql(u8, a, "--namespace")) {
             i += 1;
             if (i >= args.len) return error.MissingValue;
+            try names.validate(args[i]);
             c.namespace = args[i];
         } else if (std.mem.eql(u8, a, "--interval")) {
             i += 1;
             if (i >= args.len) return error.MissingValue;
             c.interval_ms = try parseDuration(args[i]);
+            if (c.interval_ms < min_interval_ms) return error.IntervalTooShort;
         } else if (std.mem.eql(u8, a, "--top")) {
             i += 1;
             if (i >= args.len) return error.MissingValue;
@@ -84,6 +92,10 @@ pub fn parse(allocator: std.mem.Allocator, args: []const []const u8) !Cli {
             i += 1;
             if (i >= args.len) return error.MissingValue;
             c.server = args[i];
+        } else if (std.mem.eql(u8, a, "--context")) {
+            i += 1;
+            if (i >= args.len) return error.MissingValue;
+            c.context = args[i];
         } else if (std.mem.eql(u8, a, "--once")) {
             c.once = true;
         } else {

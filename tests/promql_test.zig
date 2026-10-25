@@ -49,3 +49,18 @@ test "namespace is escaped too" {
     defer std.testing.allocator.free(q);
     try std.testing.expect(std.mem.indexOf(u8, q, "destination_workload_namespace=\"ns\\\"x\"") != null);
 }
+
+test "escape handles newline and carriage return" {
+    const e = try promql.escape(std.testing.allocator, "a\nb\rc\\d\"e");
+    defer std.testing.allocator.free(e);
+    try std.testing.expectEqualStrings("a\\nb\\rc\\\\d\\\"e", e);
+    try std.testing.expect(std.mem.indexOfAny(u8, e, "\r\n") == null);
+}
+
+test "rateWithErrors tags 5xx series in a single query" {
+    const q = try promql.rateWithErrors(std.testing.allocator, .inbound, "foo", "demo");
+    defer std.testing.allocator.free(q);
+    try std.testing.expect(std.mem.indexOf(u8, q, "sum by (source_workload, source_workload_namespace, kt_class)") != null);
+    try std.testing.expect(std.mem.indexOf(u8, q, "label_replace(rate(istio_requests_total{") != null);
+    try std.testing.expect(std.mem.indexOf(u8, q, "\"response_code\", \"(5)..\"") != null);
+}

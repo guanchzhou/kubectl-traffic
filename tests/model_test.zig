@@ -66,3 +66,31 @@ test "beginTick zeroes stale rates for peers missing from next scrape" {
     try std.testing.expectApproxEqAbs(@as(f64, 0.0), p.p50_ms, 1e-9);
     try std.testing.expectApproxEqAbs(@as(f64, 0.0), p.p99_ms, 1e-9);
 }
+
+test "addRates accumulates request and error rates" {
+    var m = model.TrafficModel.init(std.testing.allocator, 8);
+    defer m.deinit();
+    try m.addRates(.inbound, "bar", "demo", 8.0, 0);
+    try m.addRates(.inbound, "bar", "demo", 2.0, 2.0);
+    const p = m.peer(.inbound, "bar").?;
+    try std.testing.expectApproxEqAbs(@as(f64, 10.0), p.req_per_s, 1e-9);
+    try std.testing.expectApproxEqAbs(@as(f64, 80.0), p.successPercent(), 1e-9);
+}
+
+test "peers idle for prune_after ticks are dropped" {
+    var m = model.TrafficModel.init(std.testing.allocator, 8);
+    defer m.deinit();
+    m.prune_after = 3;
+    try m.setRate(.inbound, "gone", "demo", 1.0);
+    try m.setRate(.inbound, "busy", "demo", 1.0);
+    m.commitTick();
+    var i: usize = 0;
+    while (i < 3) : (i += 1) {
+        m.beginTick();
+        try m.setRate(.inbound, "busy", "demo", 1.0);
+        m.commitTick();
+    }
+    try std.testing.expect(m.peer(.inbound, "gone") == null);
+    try std.testing.expect(m.peer(.inbound, "busy") != null);
+    try std.testing.expectEqual(@as(usize, 1), m.peers.items.len);
+}

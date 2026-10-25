@@ -15,6 +15,7 @@ pub const Peer = struct {
     hist_len: usize = 0,
     hist_head: usize = 0,
     cap: usize,
+    idle_ticks: usize = 0, // consecutive committed ticks with req_per_s == 0
 
     pub fn successPercent(self: Peer) f64 {
         if (self.req_per_s <= 0) return 100.0;
@@ -47,20 +48,26 @@ pub const TrafficModel = struct {
     allocator: std.mem.Allocator,
     cap: usize,
     peers: std.ArrayList(*Peer),
+    /// Peers idle for this many consecutive ticks are dropped; 0 disables pruning.
+    prune_after: usize = default_prune_after,
+
+    pub const default_prune_after: usize = 30;
 
     pub fn init(allocator: std.mem.Allocator, history_cap: usize) TrafficModel {
         return .{ .allocator = allocator, .cap = history_cap, .peers = .empty };
     }
 
     pub fn deinit(self: *TrafficModel) void {
-        for (self.peers.items) |p| {
-            self.allocator.free(p.name);
-            self.allocator.free(p.namespace);
-            self.allocator.free(p.hist);
-            self.allocator.free(p.hist_lin);
-            self.allocator.destroy(p);
-        }
+        for (self.peers.items) |p| self.destroyPeer(p);
         self.peers.deinit(self.allocator);
+    }
+
+    fn destroyPeer(self: *TrafficModel, p: *Peer) void {
+        self.allocator.free(p.name);
+        self.allocator.free(p.namespace);
+        self.allocator.free(p.hist);
+        self.allocator.free(p.hist_lin);
+        self.allocator.destroy(p);
     }
 
     fn find(self: *TrafficModel, dir: Direction, name: []const u8) ?*Peer {
@@ -109,6 +116,14 @@ pub const TrafficModel = struct {
         (try self.getOrCreate(dir, name, ns)).err_per_s = v;
     }
 
+    /// Accumulate request and 5xx rates; used when one query returns several
+    /// series per peer (e.g. split by response class).
+    pub fn addRates(self: *TrafficModel, dir: Direction, name: []const u8, ns: []const u8, req: f64, err: f64) !void {
+        const p = try self.getOrCreate(dir, name, ns);
+        p.req_per_s += req;
+        p.err_per_s += err;
+    }
+
     pub fn setLatency(self: *TrafficModel, dir: Direction, name: []const u8, ns: []const u8, p50: f64, p99: f64) !void {
         const p = try self.getOrCreate(dir, name, ns);
         p.p50_ms = p50;
@@ -134,9 +149,22 @@ pub const TrafficModel = struct {
         }
     }
 
-    /// Push the current req_per_s of every peer into its history ring.
+    /// Push the current req_per_s of every peer into its history ring, then
+    /// drop peers that have been idle for `prune_after` consecutive ticks.
+    /// Invalidates `*Peer` pointers to pruned peers.
     pub fn commitTick(self: *TrafficModel) void {
-        for (self.peers.items) |p| p.push(p.req_per_s);
+        var i: usize = 0;
+        while (i < self.peers.items.len) {
+            const p = self.peers.items[i];
+            p.push(p.req_per_s);
+            p.idle_ticks = if (p.req_per_s == 0) p.idle_ticks + 1 else 0;
+            if (self.prune_after != 0 and p.idle_ticks >= self.prune_after) {
+                _ = self.peers.orderedRemove(i);
+                self.destroyPeer(p);
+                continue;
+            }
+            i += 1;
+        }
     }
 
     pub fn totalRate(self: *TrafficModel, dir: Direction) f64 {

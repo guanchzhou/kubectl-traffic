@@ -25,6 +25,35 @@ pub fn restoreOnPanic() void {
     g_active = false;
 }
 
+pub fn isActive() bool {
+    return g_active;
+}
+
+fn handleTermSignal(sig: std.posix.SIG) callconv(.c) void {
+    restoreOnPanic();
+    // SA_RESETHAND has already reinstated SIG_DFL; the raised signal stays
+    // pending until this handler returns, then terminates the process.
+    std.posix.raise(sig) catch {};
+}
+
+/// Restore the terminal on SIGTERM/SIGINT/SIGHUP, then re-deliver the signal
+/// with its default action.
+fn installSignalHandlers() void {
+    const act: std.posix.Sigaction = .{
+        .handler = .{ .handler = handleTermSignal },
+        .mask = std.posix.sigemptyset(),
+        .flags = std.posix.SA.RESETHAND,
+    };
+    std.posix.sigaction(.TERM, &act, null);
+    std.posix.sigaction(.INT, &act, null);
+    std.posix.sigaction(.HUP, &act, null);
+}
+
+fn writeSanitized(fd: std.posix.fd_t, text: []const u8) !void {
+    var buf: [line.max_span_len]u8 = undefined;
+    try writeAllRaw(fd, line.sanitizeInto(&buf, text));
+}
+
 fn colorCode(c: line.Color) []const u8 {
     return switch (c) {
         .default => "39",
@@ -49,7 +78,7 @@ fn writeAllRaw(fd: std.posix.fd_t, bytes: []const u8) !void {
 /// Safe for non-tty/piped output. Used by --once.
 pub fn printFrame(graph_lines: []const line.StyledLine, table_lines: []const line.StyledLine, title: []const u8) !void {
     const fd = std.posix.STDOUT_FILENO;
-    try writeAllRaw(fd, title);
+    try writeSanitized(fd, title);
     try writeAllRaw(fd, "\n\n");
     for (graph_lines) |ln| {
         for (ln.spans) |s| {
@@ -100,11 +129,12 @@ pub const Tui = struct {
             raw.cc[@backingInt(std.posix.V.MIN)] = 0;
             raw.cc[@backingInt(std.posix.V.TIME)] = 0;
             try std.posix.tcsetattr(t.in_fd, .FLUSH, raw);
-            // Arm the file-scope globals so the panic handler can restore state.
-            g_orig_termios = orig;
-            g_in_fd = t.in_fd;
-            g_active = true;
         }
+        // Arm the file-scope globals so the panic/signal handlers can restore state.
+        g_orig_termios = t.orig_termios;
+        g_in_fd = t.in_fd;
+        g_active = true;
+        installSignalHandlers();
         try t.writeAll("\x1b[?1049h\x1b[?25l"); // alt screen + hide cursor
         return t;
     }
@@ -166,10 +196,17 @@ pub const Tui = struct {
         graph_lines: []const line.StyledLine,
         table_lines: []const line.StyledLine,
         title: []const u8,
+        status: ?[]const u8,
     ) !void {
         try self.writeAll("\x1b[2J\x1b[H"); // clear screen + cursor home
-        try self.writeAll(title);
-        try self.writeAll("\r\n\r\n");
+        try writeSanitized(self.out_fd, title);
+        try self.writeAll("\r\n");
+        if (status) |s| {
+            try self.writeAll("\x1b[31m");
+            try writeSanitized(self.out_fd, s);
+            try self.writeAll("\x1b[0m");
+        }
+        try self.writeAll("\r\n");
         try self.paintLines(graph_lines);
         try self.writeAll("\r\n");
         try self.paintLines(table_lines);

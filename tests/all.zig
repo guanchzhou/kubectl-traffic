@@ -13,6 +13,8 @@ comptime {
     _ = @import("discovery_test.zig");
     _ = @import("bootstrap_test.zig");
     _ = @import("app_test.zig");
+    _ = @import("sanitize_test.zig");
+    _ = @import("names_test.zig");
     // Live integration test — self-skips when KT_LIVE env var is unset.
     _ = @import("integration_live.zig");
 }

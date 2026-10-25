@@ -31,33 +31,71 @@ fn promDir(dir: model.Direction) promql.Direction {
     };
 }
 
-/// One refresh: rate + errorRate + p50/p99 per direction, folded into the model.
-pub fn collectTick(client: *klient.K8sClient, a: std.mem.Allocator, m: *model.TrafficModel, tgt: discovery.PromTarget, workload: []const u8, ns: []const u8) !void {
-    m.beginTick();
-    const dirs = [_]model.Direction{ .inbound, .outbound };
-    for (dirs) |dir| {
-        const pd = promDir(dir);
-        {
-            const q = try promql.rate(a, pd, workload, ns);
-            defer a.free(q);
-            var v = try prom.query(client, a, tgt.namespace, tgt.service, tgt.port, q);
-            defer v.deinit();
-            try applyRate(m, dir, &v, model.TrafficModel.setRate);
-        }
-        {
-            const q = try promql.errorRate(a, pd, workload, ns);
-            defer a.free(q);
-            var v = try prom.query(client, a, tgt.namespace, tgt.service, tgt.port, q);
-            defer v.deinit();
-            try applyRate(m, dir, &v, model.TrafficModel.setErrorRate);
-        }
-        try collectLatency(client, a, m, tgt, dir, workload, ns);
+/// Fold a `promql.rateWithErrors` result into the model: every series adds to
+/// the peer's request rate, series tagged as 5xx also add to its error rate.
+pub fn applyRateWithErrors(m: *model.TrafficModel, dir: model.Direction, v: *prom.Vector) !void {
+    const name_label = if (dir == .inbound) "source_workload" else "destination_workload";
+    const ns_label = if (dir == .inbound) "source_workload_namespace" else "destination_workload_namespace";
+    for (v.samples) |s| {
+        if (!std.math.isFinite(s.value)) continue;
+        const name = s.labels.get(name_label) orelse continue;
+        const pns = s.labels.get(ns_label) orelse "";
+        const is_5xx = if (s.labels.get(promql.error_class_label)) |c| std.mem.eql(u8, c, "5") else false;
+        try m.addRates(dir, name, pns, s.value, if (is_5xx) s.value else 0);
     }
+}
+
+const DirVectors = struct {
+    rates: prom.Vector,
+    p50: prom.Vector,
+    p99: prom.Vector,
+
+    fn deinit(self: *DirVectors) void {
+        self.rates.deinit();
+        self.p50.deinit();
+        self.p99.deinit();
+    }
+};
+
+fn queryVector(client: *klient.K8sClient, a: std.mem.Allocator, tgt: discovery.PromTarget, q: []const u8) !prom.Vector {
+    defer a.free(q);
+    return prom.query(client, a, tgt.namespace, tgt.service, tgt.port, q);
+}
+
+fn fetchDir(client: *klient.K8sClient, a: std.mem.Allocator, tgt: discovery.PromTarget, dir: model.Direction, workload: []const u8, ns: []const u8) !DirVectors {
+    const pd = promDir(dir);
+    var rates = try queryVector(client, a, tgt, try promql.rateWithErrors(a, pd, workload, ns));
+    errdefer rates.deinit();
+    var p50 = try queryVector(client, a, tgt, try promql.latency(a, pd, workload, ns, 0.5));
+    errdefer p50.deinit();
+    const p99 = try queryVector(client, a, tgt, try promql.latency(a, pd, workload, ns, 0.99));
+    return .{ .rates = rates, .p50 = p50, .p99 = p99 };
+}
+
+/// One refresh: rate + 5xx rate and p50/p99 per direction. All queries run
+/// before the model is touched, so a failed tick leaves the previous values.
+pub fn collectTick(client: *klient.K8sClient, a: std.mem.Allocator, m: *model.TrafficModel, tgt: discovery.PromTarget, workload: []const u8, ns: []const u8) !void {
+    var in = try fetchDir(client, a, tgt, .inbound, workload, ns);
+    defer in.deinit();
+    var out = try fetchDir(client, a, tgt, .outbound, workload, ns);
+    defer out.deinit();
+
+    m.beginTick();
+    try applyRateWithErrors(m, .inbound, &in.rates);
+    try applyLatency(m, .inbound, &in.p50, &in.p99);
+    try applyRateWithErrors(m, .outbound, &out.rates);
+    try applyLatency(m, .outbound, &out.p50, &out.p99);
     m.commitTick();
 }
 
+/// "<kind>/<name> . ns:<ns>"; caller owns the result.
+pub fn formatTitle(a: std.mem.Allocator, kind: []const u8, name: []const u8, ns: []const u8) ![]u8 {
+    return std.fmt.allocPrint(a, "{s}/{s} . ns:{s}", .{ kind, name, ns });
+}
+
 /// Live poll loop: collect → render → paint → wait for keypress or interval.
-/// Exits cleanly on 'q' or Ctrl-C.
+/// Exits cleanly on 'q' or Ctrl-C. A failed refresh keeps the last values on
+/// screen and reports the error in the status line.
 pub fn run(
     allocator: std.mem.Allocator,
     client: *klient.K8sClient,
@@ -74,15 +112,23 @@ pub fn run(
     var tui = try tui_mod.Tui.init();
     defer tui.deinit();
 
+    var last_err: ?anyerror = null;
+    var status_buf: [128]u8 = undefined;
     while (true) {
-        collectTick(client, allocator, &m, tgt, workload, ns) catch |err| {
-            std.log.warn("collect failed: {s}", .{@errorName(err)});
-        };
+        if (collectTick(client, allocator, &m, tgt, workload, ns)) |_| {
+            last_err = null;
+        } else |err| {
+            last_err = err;
+        }
         const g = try render_graph.render(allocator, &m, workload, ns, top);
         defer render_graph.freeLines(allocator, g);
         const t = try render_table.render(allocator, &m);
         defer render_table.freeLines(allocator, t);
-        try tui.paint(g, t, title);
+        const status: ?[]const u8 = if (last_err) |e|
+            std.fmt.bufPrint(&status_buf, "refresh failed: {s} (showing last values)", .{@errorName(e)}) catch "refresh failed"
+        else
+            null;
+        try tui.paint(g, t, title, status);
         if (try tui.poll(interval_ms) == .quit) break;
     }
 }
@@ -109,21 +155,10 @@ pub fn runOnce(
     try tui_mod.printFrame(g, t, title);
 }
 
-fn collectLatency(client: *klient.K8sClient, a: std.mem.Allocator, m: *model.TrafficModel, tgt: discovery.PromTarget, dir: model.Direction, workload: []const u8, ns: []const u8) !void {
-    const pd = promDir(dir);
+/// Join p50 and p99 vectors by peer and store both latencies.
+pub fn applyLatency(m: *model.TrafficModel, dir: model.Direction, v50: *prom.Vector, v99: *prom.Vector) !void {
     const name_label = if (dir == .inbound) "source_workload" else "destination_workload";
     const ns_label = if (dir == .inbound) "source_workload_namespace" else "destination_workload_namespace";
-
-    const q50 = try promql.latency(a, pd, workload, ns, 0.5);
-    defer a.free(q50);
-    var v50 = try prom.query(client, a, tgt.namespace, tgt.service, tgt.port, q50);
-    defer v50.deinit();
-
-    const q99 = try promql.latency(a, pd, workload, ns, 0.99);
-    defer a.free(q99);
-    var v99 = try prom.query(client, a, tgt.namespace, tgt.service, tgt.port, q99);
-    defer v99.deinit();
-
     for (v50.samples) |s| {
         const name = s.labels.get(name_label) orelse continue;
         const pns = s.labels.get(ns_label) orelse "";

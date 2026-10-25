@@ -4,6 +4,40 @@ const klient = @import("klient");
 // Canonical type alias — Kubeconfig is now re-exported from klient alongside
 // KubeconfigParser so callers don't need to reach into the internal module.
 const Kubeconfig = klient.Kubeconfig;
+pub const Cluster = @typeInfo(@FieldType(Kubeconfig, "clusters")).pointer.child;
+pub const User = @typeInfo(@FieldType(Kubeconfig, "users")).pointer.child;
+
+pub const UnsupportedError = error{ ClientCertificatesUnsupported, InsecureSkipVerifyUnsupported };
+
+/// zig-klient cannot present a client certificate or skip TLS verification
+/// (Zig std TLS exposes neither). Reject such kubeconfigs before running any
+/// exec-credential plugin. A client certificate alongside a token or exec
+/// plugin is ignored and the bearer token is used.
+pub fn checkSupported(cluster: Cluster, user: User) UnsupportedError!void {
+    const has_cert = user.client_certificate != null or user.client_certificate_data != null or
+        user.client_key != null or user.client_key_data != null;
+    if (has_cert and user.token == null and user.exec == null) return error.ClientCertificatesUnsupported;
+    if (cluster.insecure_skip_tls_verify orelse false) return error.InsecureSkipVerifyUnsupported;
+}
+
+/// Human-readable explanation and workaround for errors from `checkSupported`.
+pub fn unsupportedMessage(err: anyerror) ?[]const u8 {
+    return switch (err) {
+        error.ClientCertificatesUnsupported =>
+        \\the kubeconfig user authenticates with a client certificate, which
+        \\kubectl-traffic cannot present (Zig's TLS client has no client-certificate support).
+        \\Workaround: run `kubectl proxy` in another terminal, then pass
+        \\  --server http://127.0.0.1:8001
+        ,
+        error.InsecureSkipVerifyUnsupported =>
+        \\the kubeconfig cluster sets insecure-skip-tls-verify, which kubectl-traffic
+        \\does not support. Configure certificate-authority(-data) for the cluster, or
+        \\run `kubectl proxy` in another terminal and pass
+        \\  --server http://127.0.0.1:8001
+        ,
+        else => null,
+    };
+}
 
 /// Parse an EKS cluster name from an exec-credential args slice.
 /// Looks for `--cluster-name <value>` and returns the value, or null if absent.
@@ -87,6 +121,7 @@ pub fn fromKubeconfig(
     // ---- 3. Resolve cluster + user ----
     const cluster = kc.getClusterByName(context.cluster) orelse return error.NoCluster;
     const user = kc.getUserByName(context.user) orelse return error.NoUser;
+    try checkSupported(cluster, user);
 
     // ---- 4. Resolve bearer token ----
     // exec-credential plugins (e.g. `aws eks get-token`) take priority over a
@@ -138,25 +173,12 @@ pub fn fromKubeconfig(
     var ca_pem_owned: ?[]u8 = null;
     errdefer if (ca_pem_owned) |pem| allocator.free(pem);
 
-    const skip_verify = cluster.insecure_skip_tls_verify orelse false;
     const tls_cfg: ?klient.TlsConfig = if (cluster.certificate_authority_data) |ca| blk: {
         const pem = try decodeCaCertData(allocator, ca);
         ca_pem_owned = pem;
-        break :blk .{
-            .ca_cert_data = pem,
-            .client_cert_path = user.client_certificate,
-            .client_key_path = user.client_key,
-            .insecure_skip_verify = skip_verify,
-        };
+        break :blk .{ .ca_cert_data = pem };
     } else if (cluster.certificate_authority) |ca_path|
-        .{
-            .ca_cert_path = ca_path,
-            .client_cert_path = user.client_certificate,
-            .client_key_path = user.client_key,
-            .insecure_skip_verify = skip_verify,
-        }
-    else if (skip_verify)
-        .{ .insecure_skip_verify = true }
+        .{ .ca_cert_path = ca_path }
     else
         null;
 

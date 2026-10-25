@@ -1,4 +1,5 @@
 const std = @import("std");
+const names = @import("names");
 
 pub const Sample = struct {
     labels: std.StringHashMap([]const u8),
@@ -76,6 +77,8 @@ fn percentEncode(a: std.mem.Allocator, s: []const u8) ![]u8 {
 }
 
 pub fn proxyQueryPath(a: std.mem.Allocator, ns: []const u8, svc: []const u8, port: u16, promql: []const u8) ![]u8 {
+    try names.validate(ns);
+    try names.validate(svc);
     const enc = try percentEncode(a, promql);
     defer a.free(enc);
     return std.fmt.allocPrint(

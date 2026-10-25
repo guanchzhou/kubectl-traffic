@@ -8,10 +8,13 @@ pub fn build(b: *std.Build) void {
     const klient_mod = klient.module("klient");
 
     // ---- shared source modules ----
+    const names_mod = b.createModule(.{ .root_source_file = b.path("src/names.zig"), .target = target, .optimize = optimize });
     const cli_mod = b.createModule(.{ .root_source_file = b.path("src/cli.zig"), .target = target, .optimize = optimize });
+    cli_mod.addImport("names", names_mod);
     const promql_mod = b.createModule(.{ .root_source_file = b.path("src/promql.zig"), .target = target, .optimize = optimize });
     const prom_client_mod = b.createModule(.{ .root_source_file = b.path("src/prom_client.zig"), .target = target, .optimize = optimize });
     prom_client_mod.addImport("klient", klient_mod);
+    prom_client_mod.addImport("names", names_mod);
     const model_mod = b.createModule(.{ .root_source_file = b.path("src/model.zig"), .target = target, .optimize = optimize });
     const fmt_mod = b.createModule(.{ .root_source_file = b.path("src/render/format.zig"), .target = target, .optimize = optimize });
     const spark_mod = b.createModule(.{ .root_source_file = b.path("src/render/sparkline.zig"), .target = target, .optimize = optimize });
@@ -31,6 +34,7 @@ pub fn build(b: *std.Build) void {
 
     const discovery_mod = b.createModule(.{ .root_source_file = b.path("src/discovery.zig"), .target = target, .optimize = optimize });
     discovery_mod.addImport("klient", klient_mod);
+    discovery_mod.addImport("names", names_mod);
 
     // ---- public library module (for downstream consumers like c3s) ----
     const kt_mod = b.addModule("kubectl_traffic", .{ .root_source_file = b.path("src/lib.zig"), .target = target, .optimize = optimize });
@@ -61,6 +65,7 @@ pub fn build(b: *std.Build) void {
     const target_mod = b.createModule(.{ .root_source_file = b.path("src/target.zig"), .target = target, .optimize = optimize });
     target_mod.addImport("cli", cli_mod);
     target_mod.addImport("klient", klient_mod);
+    target_mod.addImport("names", names_mod);
 
     const exe = b.addExecutable(.{
         .name = "kubectl-traffic",
@@ -101,6 +106,7 @@ pub fn build(b: *std.Build) void {
     tests.root_module.addImport("discovery", discovery_mod);
     tests.root_module.addImport("bootstrap", bootstrap_mod);
     tests.root_module.addImport("app", app_mod);
+    tests.root_module.addImport("names", names_mod);
     const run_tests = b.addRunArtifact(tests);
     b.step("test", "Run unit tests").dependOn(&run_tests.step);
 }

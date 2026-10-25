@@ -8,7 +8,8 @@ const Span = line.Span;
 
 fn lineOf(a: std.mem.Allocator, text: []const u8, color: line.Color) !StyledLine {
     const spans = try a.alloc(Span, 1);
-    spans[0] = .{ .text = try a.dupe(u8, text), .color = color };
+    errdefer a.free(spans);
+    spans[0] = .{ .text = try line.sanitizeAlloc(a, text, line.max_span_len * 4), .color = color };
     return .{ .spans = spans };
 }
 
@@ -153,7 +154,7 @@ pub fn render(a: std.mem.Allocator, m: *model.TrafficModel, target: []const u8, 
             try b.appendSlice(a, HBAR);
             try b.appendSlice(a, RARROW);
             try b.append(a, ' ');
-            try b.appendSlice(a, p.name);
+            try b.appendSlice(a, p.name[0..@min(p.name.len, NAME_CAP)]);
             try b.append(a, ' ');
             const rs = try fmtmod.rate(&rb, p.req_per_s);
             try b.appendSlice(a, rs);
@@ -177,12 +178,9 @@ pub fn render(a: std.mem.Allocator, m: *model.TrafficModel, target: []const u8, 
 
     // ---- footer: totals + namespace ----
     {
-        var f = std.ArrayList(u8).empty;
-        defer f.deinit(a);
-        var fb: [128]u8 = undefined;
-        const ftxt = try std.fmt.bufPrint(&fb, "{d:.1} r/s in   ns:{s}   {d:.1} r/s out", .{ m.totalRate(.inbound), ns, m.totalRate(.outbound) });
-        try f.appendSlice(a, ftxt);
-        try lines.append(a, try lineOf(a, f.items, .dim));
+        const ftxt = try std.fmt.allocPrint(a, "{d:.1} r/s in   ns:{s}   {d:.1} r/s out", .{ m.totalRate(.inbound), ns, m.totalRate(.outbound) });
+        defer a.free(ftxt);
+        try lines.append(a, try lineOf(a, ftxt, .dim));
     }
 
     return lines.toOwnedSlice(a);

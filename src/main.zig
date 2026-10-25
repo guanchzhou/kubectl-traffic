@@ -10,6 +10,20 @@ const tui = @import("render_tui");
 /// and stack trace, so the output is readable and the shell is not left broken.
 pub const panic = std.debug.FullPanic(panicFn);
 
+pub const std_options: std.Options = .{ .logFn = logFn };
+
+/// Drop log output while the alternate screen is up; it would be painted over
+/// the frame and then erased by the next redraw anyway.
+fn logFn(
+    comptime level: std.log.Level,
+    comptime scope: @EnumLiteral(),
+    comptime format: []const u8,
+    args: anytype,
+) void {
+    if (tui.isActive()) return;
+    std.log.defaultLog(level, scope, format, args);
+}
+
 fn panicFn(msg: []const u8, first_trace_addr: ?usize) noreturn {
     tui.restoreOnPanic();
     std.debug.defaultPanic(msg, first_trace_addr);
@@ -45,7 +59,11 @@ pub fn main(init: std.process.Init) !void {
     var boot = if (c.server) |url|
         try bootstrap.fromServer(allocator, io, url, c.namespace orelse "default")
     else
-        try bootstrap.fromKubeconfig(allocator, io, null);
+        bootstrap.fromKubeconfig(allocator, io, c.context) catch |err| {
+            const msg = bootstrap.unsupportedMessage(err) orelse return err;
+            std.debug.print("error: {s}\n", .{msg});
+            std.process.exit(1);
+        };
     defer boot.deinit();
 
     const ns = c.namespace orelse boot.namespace;
@@ -59,8 +77,8 @@ pub fn main(init: std.process.Init) !void {
 
     const tgt = if (c.prometheus) |ref| try discovery.parseOverride(ref) else discovery.default();
 
-    var title_buf: [160]u8 = undefined;
-    const title = try std.fmt.bufPrint(&title_buf, "{s}/{s} . ns:{s}", .{ @tagName(c.kind), c.name, ns });
+    const title = try app.formatTitle(allocator, @tagName(c.kind), c.name, ns);
+    defer allocator.free(title);
 
     if (c.once) {
         try app.runOnce(allocator, &boot.client, tgt, workload, ns, c.top, title);

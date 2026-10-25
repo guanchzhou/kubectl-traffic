@@ -1,6 +1,7 @@
 const std = @import("std");
 const cli = @import("cli");
 const klient = @import("klient");
+const names = @import("names");
 
 pub fn workloadFromKind(kind: cli.Kind, name: []const u8) ![]const u8 {
     return switch (kind) {
@@ -59,6 +60,8 @@ pub fn resolvePod(
     ns: []const u8,
     pod_name: []const u8,
 ) ![]const u8 {
+    try names.validate(ns);
+    try names.validate(pod_name);
     // Build the pod resource path.
     const path = try std.fmt.allocPrint(
         allocator,

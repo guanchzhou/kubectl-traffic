@@ -121,3 +121,31 @@ test "--once alone (no --server) is valid" {
     try std.testing.expect(c.once);
     try std.testing.expect(c.server == null);
 }
+
+// --- --interval minimum and --context ---
+
+test "--interval below 250ms is rejected" {
+    const args = [_][]const u8{ "deploy/web", "--interval", "100ms" };
+    try std.testing.expectError(error.IntervalTooShort, cli.parse(std.testing.allocator, &args));
+    const zero = [_][]const u8{ "deploy/web", "--interval", "0s" };
+    try std.testing.expectError(error.IntervalTooShort, cli.parse(std.testing.allocator, &zero));
+}
+
+test "--interval 250ms is accepted" {
+    const args = [_][]const u8{ "deploy/web", "--interval", "250ms" };
+    const c = try cli.parse(std.testing.allocator, &args);
+    try std.testing.expectEqual(@as(u64, 250), c.interval_ms);
+}
+
+test "--context sets the kubeconfig context" {
+    const args = [_][]const u8{ "deploy/web", "--context", "prod-eu" };
+    const c = try cli.parse(std.testing.allocator, &args);
+    try std.testing.expectEqualStrings("prod-eu", c.context.?);
+    const none = [_][]const u8{"deploy/web"};
+    try std.testing.expect((try cli.parse(std.testing.allocator, &none)).context == null);
+}
+
+test "help text does not claim Prometheus auto-discovery" {
+    try std.testing.expect(std.mem.indexOf(u8, cli.Cli.help, "auto-discover") == null);
+    try std.testing.expect(std.mem.indexOf(u8, cli.Cli.help, "--context") != null);
+}

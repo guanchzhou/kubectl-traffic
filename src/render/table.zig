@@ -9,7 +9,7 @@ const StyledLine = line.StyledLine;
 const Span = line.Span;
 
 fn dupSpan(a: std.mem.Allocator, text: []const u8, color: line.Color) !Span {
-    return .{ .text = try a.dupe(u8, text), .color = color };
+    return .{ .text = try line.sanitizeAlloc(a, text, line.max_span_len), .color = color };
 }
 
 fn header(a: std.mem.Allocator, title: []const u8) !StyledLine {
