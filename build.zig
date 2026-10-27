@@ -4,7 +4,9 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const klient = b.dependency("zig_klient", .{ .target = target, .optimize = optimize });
+    // A consumer that also uses zig-klient must pass the same value so both share one klient module.
+    const klient_h2 = b.option(bool, "klient_h2", "Build zig-klient with its HTTP/2 list client (default: false)") orelse false;
+    const klient = b.dependency("zig_klient", .{ .target = target, .optimize = optimize, .h2 = klient_h2 });
     const klient_mod = klient.module("klient");
 
     // ---- shared source modules ----
