@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0 - 2026-10-27
+
+- Add the `klient_h2` build option (default false), forwarded to zig-klient as `h2`. A consumer that builds zig-klient with its HTTP/2 list client passes the same value so both share one `klient` module. Requires zig-klient 0.9.0 or later.
+
 ## 0.1.2 - 2026-10-25
 
 - Correction to 0.1.1: client certificates (`client-certificate`, `client-certificate-data`, `client-key`, `client-key-data`) and `insecure-skip-tls-verify` were never supported; zig-klient rejects them because Zig's TLS client cannot present a client certificate or skip verification. Supported authentication is a bearer token (static `token` or an exec-credential plugin) with the cluster CA from `certificate-authority` or `certificate-authority-data`, or `--server` pointing at `kubectl proxy`. Such kubeconfigs are now detected before any request and the tool exits with an explanation suggesting `kubectl proxy` and `--server`. A client certificate configured alongside a token or exec plugin is ignored and the token is used.
